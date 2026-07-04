@@ -1,0 +1,12 @@
+{
+  "name": "ai-learning-knowledge-graph",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:backend": "cd backend && python -m uvicorn app.main:app --reload",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "test:backend": "cd backend && pytest",
+    "test:frontend": "npm --prefix frontend test -- --run",
+    "build:frontend": "npm --prefix frontend run build"
+  }
+}

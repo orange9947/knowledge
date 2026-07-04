@@ -1,0 +1,105 @@
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.database import get_session, init_db
+from app.repositories import KnowledgeRepository
+from app.schemas import (
+    HealthResponse,
+    LearningRunCreate,
+    LearningRunRead,
+    ModelConfigRead,
+    ModelConfigWrite,
+    SourceConfigRead,
+    SourceConfigWrite,
+    SourceRead,
+)
+from app.services import LearningRunService
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+settings = get_settings()
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health", response_model=HealthResponse)
+def health(session: Session = Depends(get_session)) -> HealthResponse:
+    session.execute(text("select 1"))
+    return HealthResponse(
+        status="ok",
+        app_name=settings.app_name,
+        version=settings.app_version,
+        database="ready",
+    )
+
+
+@app.get("/settings/model", response_model=ModelConfigRead | None)
+def get_model_settings(session: Session = Depends(get_session)):
+    return KnowledgeRepository(session).get_model_config()
+
+
+@app.put("/settings/model", response_model=ModelConfigRead)
+def put_model_settings(
+    payload: ModelConfigWrite,
+    session: Session = Depends(get_session),
+):
+    return KnowledgeRepository(session).save_model_config(payload)
+
+
+@app.get("/settings/sources", response_model=list[SourceConfigRead])
+def get_source_settings(session: Session = Depends(get_session)):
+    return KnowledgeRepository(session).list_source_configs()
+
+
+@app.put("/settings/sources", response_model=list[SourceConfigRead])
+def put_source_settings(
+    payload: list[SourceConfigWrite],
+    session: Session = Depends(get_session),
+):
+    return KnowledgeRepository(session).replace_source_configs(payload)
+
+
+@app.post("/runs", response_model=LearningRunRead, status_code=201)
+def create_run(
+    payload: LearningRunCreate,
+    session: Session = Depends(get_session),
+):
+    return KnowledgeRepository(session).create_run(payload)
+
+
+@app.get("/runs", response_model=list[LearningRunRead])
+def list_runs(session: Session = Depends(get_session)):
+    return KnowledgeRepository(session).list_runs()
+
+
+@app.post("/runs/{run_id}/collect", response_model=LearningRunRead)
+def collect_run_sources(run_id: int, session: Session = Depends(get_session)):
+    run = LearningRunService(session).collect_sources(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
+@app.get("/runs/{run_id}/sources", response_model=list[SourceRead])
+def list_run_sources(run_id: int, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    if repository.get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return repository.list_sources_for_run(run_id)
