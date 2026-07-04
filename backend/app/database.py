@@ -39,6 +39,7 @@ def init_db(target_engine: Engine | None = None) -> None:
 
         repository = KnowledgeRepository(session)
         default_base = repository.ensure_default_knowledge_base()
+        repository.ensure_default_source_configs()
         session.execute(
             text("update learning_runs set knowledge_base_id = :base_id where knowledge_base_id is null"),
             {"base_id": default_base.id},

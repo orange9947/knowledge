@@ -54,6 +54,10 @@ def test_model_settings_mask_api_key(client: TestClient):
 
 
 def test_source_settings_replace_existing_configs(client: TestClient):
+    initial_response = client.get("/settings/sources")
+    assert initial_response.status_code == 200
+    assert "GitHub repositories" in [item["name"] for item in initial_response.json()]
+
     response = client.put(
         "/settings/sources",
         json=[
@@ -106,7 +110,7 @@ def test_create_and_list_runs(client: TestClient):
     assert default_list_response.json() == []
 
 
-def test_collect_run_without_sources_marks_partial(client: TestClient):
+def test_collect_run_uses_seeded_default_sources(client: TestClient):
     run_response = client.post("/runs", json={"keyword": "RAG", "mode": "light"})
     run_id = run_response.json()["id"]
 
@@ -115,11 +119,12 @@ def test_collect_run_without_sources_marks_partial(client: TestClient):
     assert collect_response.status_code == 200
     payload = collect_response.json()
     assert payload["status"] == "partial"
-    assert "No source candidates" in payload["error_summary"]
 
     sources_response = client.get(f"/runs/{run_id}/sources")
     assert sources_response.status_code == 200
-    assert sources_response.json() == []
+    sources = sources_response.json()
+    assert len(sources) > 0
+    assert any(source["site"] in {"github.com", "news.google.com"} for source in sources)
 
 
 def test_cards_and_graph_endpoints(client: TestClient):

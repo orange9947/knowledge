@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.defaults import default_source_configs
 from app.schemas import (
     CardCreate,
     KnowledgeEdgeCreate,
@@ -158,6 +159,12 @@ class KnowledgeRepository:
     def list_source_configs(self) -> list[models.SourceConfig]:
         statement = select(models.SourceConfig).order_by(models.SourceConfig.id.asc())
         return list(self.session.scalars(statement))
+
+    def ensure_default_source_configs(self) -> list[models.SourceConfig]:
+        existing = self.list_source_configs()
+        if existing:
+            return existing
+        return self.replace_source_configs(default_source_configs())
 
     def replace_source_configs(self, payloads: list[SourceConfigWrite]) -> list[models.SourceConfig]:
         existing = self.list_source_configs()

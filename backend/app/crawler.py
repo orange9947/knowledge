@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 from html.parser import HTMLParser
 
@@ -70,6 +71,9 @@ class SourceCrawler:
 
         content_type = response.headers.get("content-type", "")
         if "text/html" not in content_type and "application/xhtml" not in content_type and content_type:
+            text = _extract_non_html_text(response.text, content_type)
+            if text:
+                return self._from_text(run_id, candidate, text, content_type=content_type)
             return self._partial(
                 run_id,
                 candidate,
@@ -84,18 +88,33 @@ class SourceCrawler:
         if not extracted_text:
             return self._partial(run_id, candidate, "empty_extraction", response.text[:500], title=title)
 
+        return self._from_text(run_id, candidate, extracted_text, title=title)
+
+    def _from_text(
+        self,
+        run_id: int,
+        candidate: SourceCandidate,
+        extracted_text: str,
+        title: str | None = None,
+        content_type: str | None = None,
+    ) -> SourceCreate:
+        cleaned = _clean_text(extracted_text)
+        status = "success" if _quality_score(cleaned) >= 0.55 else "partial"
+        status_reason = None if status == "success" else "low_text_quality"
+        if content_type and status == "partial":
+            status_reason = f"{status_reason}:{content_type.split(';')[0]}"
         return SourceCreate(
             run_id=run_id,
             url=candidate.url,
-            title=title,
+            title=title or candidate.title,
             site=candidate.site or site_from_url(candidate.url),
             language=candidate.language,
-            status="success",
-            status_reason=None,
+            status=status,
+            status_reason=status_reason,
             snippet=candidate.snippet,
-            extracted_text=extracted_text[:20000],
-            content_hash=_hash_text(extracted_text),
-            quality_score=_quality_score(extracted_text),
+            extracted_text=cleaned[:20000],
+            content_hash=_hash_text(cleaned),
+            quality_score=_quality_score(cleaned),
         )
 
     def _failed(self, run_id: int, candidate: SourceCandidate, reason: str) -> SourceCreate:
@@ -135,6 +154,42 @@ class SourceCrawler:
 
 def _hash_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _extract_non_html_text(value: str, content_type: str) -> str | None:
+    media_type = content_type.split(";")[0].strip().lower()
+    if media_type in {"text/plain", "text/markdown", "application/xml", "text/xml", "application/rss+xml", "application/atom+xml"}:
+        return value
+    if media_type == "application/json" or media_type.endswith("+json"):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        return _flatten_json_text(parsed)
+    return None
+
+
+def _flatten_json_text(value) -> str:
+    parts: list[str] = []
+    if isinstance(value, dict):
+        for item in value.values():
+            text = _flatten_json_text(item)
+            if text:
+                parts.append(text)
+    elif isinstance(value, list):
+        for item in value:
+            text = _flatten_json_text(item)
+            if text:
+                parts.append(text)
+    elif isinstance(value, str):
+        parts.append(value)
+    elif isinstance(value, (int, float)):
+        parts.append(str(value))
+    return " ".join(parts)
+
+
+def _clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _quality_score(value: str) -> float:

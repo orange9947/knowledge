@@ -2,6 +2,7 @@ from app import models
 from app.discovery import (
     dedupe_candidates,
     discover_candidates,
+    extract_search_result_links,
     normalize_url,
     parse_feed_entries,
     SourceCandidate,
@@ -70,4 +71,75 @@ def test_discover_candidates_uses_configured_sources():
         "github.com",
         "docs.example.com",
         "example.com",
+    ]
+
+
+def test_discover_candidates_expands_keyword_templates_and_domains():
+    configs = [
+        models.SourceConfig(name="Juejin", type="domain", enabled=True, url_or_domain="juejin.cn", language_hint="zh"),
+        models.SourceConfig(
+            name="Google News",
+            type="rss",
+            enabled=True,
+            url_or_domain="https://news.example.com/rss?q={keyword}",
+            language_hint="en",
+        ),
+        models.SourceConfig(
+            name="Search",
+            type="search_page",
+            enabled=True,
+            url_or_domain="https://search.example.com/?q={keyword}",
+            language_hint="en",
+        ),
+    ]
+    feed = """
+    <rss><channel>
+      <item><title>AI Agent news</title><link>https://news.example.com/agent</link></item>
+    </channel></rss>
+    """
+    search_html = """
+    <html><body>
+      <a href="https://dev.to/example/ai-agent-guide">AI Agent guide</a>
+    </body></html>
+    """
+
+    def fetch(url: str) -> str:
+        if "rss" in url:
+            assert "AI+Agent" in url
+            return feed
+        assert "AI+Agent" in url
+        return search_html
+
+    candidates = discover_candidates("AI Agent", configs, "light", fetch_text=fetch)
+
+    assert "https://juejin.cn/search?query=AI+Agent&type=0" in [candidate.url for candidate in candidates]
+    assert "https://news.example.com/agent" in [candidate.url for candidate in candidates]
+    assert "https://dev.to/example/ai-agent-guide" in [candidate.url for candidate in candidates]
+
+
+def test_extract_search_result_links_filters_low_value_links():
+    html = """
+    <a href="/url?q=https%3A%2F%2Fexample.com%2Fai-agent">AI Agent article</a>
+    <a href="https://accounts.google.com/login">AI Agent login</a>
+    <a href="https://example.com/other">Unrelated</a>
+    """
+
+    candidates = extract_search_result_links(html, "https://www.google.com/search?q=AI+Agent", "AI Agent", "en")
+
+    assert [candidate.url for candidate in candidates] == ["https://example.com/ai-agent"]
+
+
+def test_extract_search_result_links_ignores_site_navigation():
+    html = """
+    <a href="https://juejin.cn/search?query=RAG&type=2">文章</a>
+    <a href="https://juejin.cn/post/7440000000000000000">RAG 实践指南</a>
+    <a href="https://dev.to/search?q=RAG">RAG search</a>
+    <a href="https://dev.to/team/rag-for-apps">RAG for apps</a>
+    """
+
+    candidates = extract_search_result_links(html, "https://juejin.cn/search?query=RAG&type=0", "RAG", "zh")
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://juejin.cn/post/7440000000000000000",
+        "https://dev.to/team/rag-for-apps",
     ]

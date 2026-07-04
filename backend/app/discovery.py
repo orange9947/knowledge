@@ -2,7 +2,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
-from urllib.parse import quote_plus, urlparse
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from xml.etree import ElementTree
 
 import httpx
@@ -78,14 +79,14 @@ def discover_candidates(
         if config.type == "entry_url":
             candidates.extend(_entry_url_candidates(config))
         elif config.type == "domain":
-            candidates.extend(_domain_candidates(config))
+            candidates.extend(_domain_candidates(keyword, config))
         elif config.type == "builtin":
             candidates.extend(_builtin_candidates(keyword, config))
         elif config.type == "rss":
             candidates.extend(_rss_candidates(keyword, config, fetcher))
         elif config.type == "search_page":
-            candidates.extend(_search_page_candidates(keyword, config))
-    return dedupe_candidates(candidates)[: mode_limit(mode)]
+            candidates.extend(_search_page_candidates(keyword, config, fetcher))
+    return sorted(dedupe_candidates(candidates), key=_candidate_rank)[: mode_limit(mode)]
 
 
 def parse_feed_entries(
@@ -165,10 +166,21 @@ def _entry_url_candidates(config: models.SourceConfig) -> list[SourceCandidate]:
     ]
 
 
-def _domain_candidates(config: models.SourceConfig) -> list[SourceCandidate]:
+def _domain_candidates(keyword: str, config: models.SourceConfig) -> list[SourceCandidate]:
     if is_http_url(config.url_or_domain):
         return _entry_url_candidates(config)
-    return []
+    domain = _clean_domain(config.url_or_domain)
+    if not domain:
+        return []
+    return [
+        SourceCandidate(
+            url=_domain_search_url(domain, quote_plus(keyword)),
+            title=f"{config.name} domain search",
+            site=domain,
+            language=config.language_hint,
+            snippet=f"Search results from configured domain {domain}.",
+        )
+    ]
 
 
 def _builtin_candidates(keyword: str, config: models.SourceConfig) -> list[SourceCandidate]:
@@ -192,9 +204,9 @@ def _rss_candidates(
     config: models.SourceConfig,
     fetch_text: Callable[[str], str],
 ) -> list[SourceCandidate]:
-    if not is_http_url(config.url_or_domain):
+    feed_url = _keyword_url(config.url_or_domain or "", keyword)
+    if not is_http_url(feed_url):
         return []
-    feed_url = config.url_or_domain or ""
     try:
         feed_xml = fetch_text(feed_url)
     except httpx.HTTPError:
@@ -202,10 +214,162 @@ def _rss_candidates(
     return parse_feed_entries(feed_xml, keyword, feed_url, config.language_hint)
 
 
-def _search_page_candidates(keyword: str, config: models.SourceConfig) -> list[SourceCandidate]:
+def _search_page_candidates(
+    keyword: str,
+    config: models.SourceConfig,
+    fetch_text: Callable[[str], str],
+) -> list[SourceCandidate]:
     if not config.enabled or not is_http_url(config.url_or_domain):
         return []
-    url = (config.url_or_domain or "").replace("{keyword}", quote_plus(keyword))
+    url = _keyword_url(config.url_or_domain or "", keyword)
+    candidates = [
+        SourceCandidate(
+            url=url,
+            title=f"Search page for {keyword}",
+            site=site_from_url(url),
+            language=config.language_hint,
+            snippet="Experimental search-page source.",
+        )
+    ]
+    try:
+        html = fetch_text(url)
+    except httpx.HTTPError:
+        return candidates
+    parsed_links = extract_search_result_links(html, url, keyword, config.language_hint)
+    return parsed_links or candidates
+
+
+def extract_search_result_links(
+    html: str,
+    base_url: str,
+    keyword: str,
+    language_hint: str | None = None,
+) -> list[SourceCandidate]:
+    parser = LinkParser(base_url)
+    parser.feed(html)
+    keyword_lower = keyword.lower()
+    candidates: list[SourceCandidate] = []
+    for href, text in parser.links:
+        url = _unwrap_redirect_url(href)
+        if not is_http_url(url):
+            continue
+        site = site_from_url(url)
+        if not site or _is_low_value_site(site):
+            continue
+        if not _looks_like_result_url(url):
+            continue
+        if keyword_lower not in f"{text} {url}".lower():
+            continue
+        candidates.append(
+            SourceCandidate(
+                url=url,
+                title=text or site,
+                site=site,
+                language=language_hint,
+                snippet=f"Search result from {site}.",
+            )
+        )
+    return dedupe_candidates(candidates)
+
+
+class LinkParser(HTMLParser):
+    def __init__(self, base_url: str) -> None:
+        super().__init__()
+        self.base_url = base_url
+        self._current_href: str | None = None
+        self._current_text: list[str] = []
+        self.links: list[tuple[str, str | None]] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag != "a":
+            return
+        href = dict(attrs).get("href")
+        if not href:
+            return
+        self._current_href = urljoin(self.base_url, href)
+        self._current_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._current_href is not None:
+            stripped = data.strip()
+            if stripped:
+                self._current_text.append(stripped)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a" or self._current_href is None:
+            return
+        text = " ".join(self._current_text)
+        self.links.append((self._current_href, text or None))
+        self._current_href = None
+        self._current_text = []
+
+
+def _keyword_url(url: str, keyword: str) -> str:
+    return url.replace("{keyword}", quote_plus(keyword))
+
+
+def _clean_domain(value: str | None) -> str | None:
+    if not value:
+        return None
+    stripped = value.strip().lower()
+    if not stripped:
+        return None
+    parsed = urlparse(stripped if "://" in stripped else f"https://{stripped}")
+    return parsed.netloc or None
+
+
+def _domain_search_url(domain: str, keyword: str) -> str:
+    if "juejin.cn" in domain:
+        return f"https://juejin.cn/search?query={keyword}&type=0"
+    if "dev.to" in domain:
+        return f"https://dev.to/search?q={keyword}"
+    if "stackoverflow.com" in domain:
+        return f"https://stackoverflow.com/search?q={keyword}"
+    return f"https://www.google.com/search?q=site%3A{domain}+{keyword}"
+
+
+def _unwrap_redirect_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("google.com") and parsed.path == "/url":
+        target = parse_qs(parsed.query).get("q", [None])[0]
+        if target:
+            return target
+    if parsed.netloc.endswith("bing.com") and parsed.path == "/ck/a":
+        target = parse_qs(parsed.query).get("u", [None])[0]
+        if target:
+            return unquote(target)
+    return url
+
+
+def _is_low_value_site(site: str) -> bool:
+    blocked = {
+        "accounts.google.com",
+        "support.google.com",
+        "policies.google.com",
+        "www.google.com",
+        "google.com",
+        "hn.algolia.com",
+    }
+    return site in blocked
+
+
+def _looks_like_result_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    query = parsed.query.lower()
+    if "juejin.cn" in host:
+        return path.startswith("/post/") or path.startswith("/book/")
+    if "dev.to" in host:
+        blocked_paths = {"", "/", "/search", "/top/week", "/latest"}
+        return path not in blocked_paths and path.count("/") >= 2
+    if "stackoverflow.com" in host:
+        return path.startswith("/questions/")
+    if "github.com" in host:
+        return path.count("/") >= 2 and not path.startswith("/search")
+    if "hn.algolia.com" in host:
+        return "story_" in query or "objectid" in query
+    return True
     return [
         SourceCandidate(
             url=url,
@@ -219,6 +383,20 @@ def _search_page_candidates(keyword: str, config: models.SourceConfig) -> list[S
 
 def _matches_keyword(keyword: str, *values: str | None) -> bool:
     return any(keyword in (value or "").lower() for value in values)
+
+
+def _candidate_rank(candidate: SourceCandidate) -> tuple[int, str]:
+    url = candidate.url.lower()
+    site = candidate.site or site_from_url(candidate.url) or ""
+    if "github.com/search" in url:
+        return (0, url)
+    if "news.google.com" in site:
+        return (1, url)
+    if "/post/" in url or "/questions/" in url:
+        return (2, url)
+    if "search" in url or "hn.algolia.com" in site:
+        return (4, url)
+    return (3, url)
 
 
 def _text(element: ElementTree.Element, tag: str) -> str | None:
