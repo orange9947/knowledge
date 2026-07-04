@@ -151,6 +151,44 @@ export type SourceSettings = {
 
 export type SourceSettingsInput = Omit<SourceSettings, "id">;
 
+export type AssistantReference = {
+  kind: "graph" | "web" | "model" | string;
+  title: string;
+  summary: string | null;
+  node_id: number | null;
+  source_id: number | null;
+  url: string | null;
+};
+
+export type AssistantCandidateCard = {
+  id: number | null;
+  run_id: number | null;
+  type: string;
+  title: string;
+  summary: string;
+  details: string | null;
+  source_ids: number[];
+  approval_status: string;
+};
+
+export type AssistantResponse = {
+  answer: string;
+  used_web: boolean;
+  run_id: number | null;
+  graph_references: AssistantReference[];
+  web_references: AssistantReference[];
+  candidate_cards: AssistantCandidateCard[];
+  warnings: string[];
+};
+
+export type AssistantQueryInput = {
+  knowledge_base_id: number;
+  question: string;
+  selected_node_id?: number | null;
+  allow_web: boolean;
+  create_candidates: boolean;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     headers: {
@@ -374,6 +412,13 @@ export async function searchKnowledge(
   let path = `/knowledge/search${params.size ? `?${params.toString()}` : ""}`;
   path = withKnowledgeBase(path, knowledgeBaseId);
   return request<KnowledgeNode[]>(path);
+}
+
+export async function queryAssistant(payload: AssistantQueryInput): Promise<AssistantResponse> {
+  return request<AssistantResponse>("/knowledge/assistant/query", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function exportKnowledge(knowledgeBaseId?: number | null): Promise<KnowledgeExport> {

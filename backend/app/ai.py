@@ -40,6 +40,24 @@ class AIOutput(BaseModel):
     edges: list[AIEdge]
 
 
+class AIReference(BaseModel):
+    kind: str
+    title: str
+    summary: str | None = None
+    ref_id: str | None = None
+    url: str | None = None
+
+
+class AIAssistantOutput(BaseModel):
+    answer: str
+    graph_references: list[AIReference] = Field(default_factory=list)
+    web_references: list[AIReference] = Field(default_factory=list)
+    cards: list[AICard] = Field(default_factory=list)
+    nodes: list[AINode] = Field(default_factory=list)
+    edges: list[AIEdge] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, message: str, status_code: int = 502):
         super().__init__(message)
@@ -125,6 +143,27 @@ class AIOrchestrator:
         prompt = _build_summary_prompt(keyword, materials, history_cards, history_nodes, knowledge_base_prompt, run_prompt)
         return self._generate_ai_output_with_prompt(prompt, model_config, api_key)
 
+    def answer_graph_question(
+        self,
+        question: str,
+        graph_context: str,
+        web_materials: list[Material],
+        model_config: models.ModelConfig | None,
+        knowledge_base_prompt: str | None = None,
+        selected_node_name: str | None = None,
+        create_candidates: bool = True,
+    ) -> AIAssistantOutput:
+        api_key = self._require_api_key(model_config)
+        prompt = _build_assistant_prompt(
+            question,
+            graph_context,
+            web_materials,
+            knowledge_base_prompt,
+            selected_node_name,
+            create_candidates,
+        )
+        return self._generate_assistant_output_with_prompt(prompt, model_config, api_key)
+
     def suggest_collection_targets(
         self,
         keyword: str,
@@ -195,6 +234,36 @@ class AIOrchestrator:
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError):
             return self._repair_provider_output(content, model_config, api_key)
 
+    def _generate_assistant_output_with_prompt(
+        self,
+        prompt: str,
+        model_config: models.ModelConfig,
+        api_key: str,
+    ) -> AIAssistantOutput:
+        payload = {
+            "model": model_config.model,
+            "temperature": model_config.default_temperature,
+            "max_tokens": model_config.max_tokens,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You produce strict JSON for a Chinese graph learning assistant. Return JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{model_config.base_url.rstrip('/')}/chat/completions"
+        data = self._post_chat_completion(url, headers, payload)
+        content = data["choices"][0]["message"]["content"]
+        try:
+            return _parse_assistant_output(content)
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError):
+            return self._repair_assistant_output(content, model_config, api_key)
+
     def _require_api_key(self, model_config: models.ModelConfig | None) -> str:
         if model_config is None:
             raise ValueError("请先保存模型配置")
@@ -238,6 +307,43 @@ class AIOrchestrator:
             return _parse_ai_output(repaired_content)
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
             raise AIProviderError("模型返回格式异常，自动修复后仍无法解析阅读分析结果。") from exc
+
+    def _repair_assistant_output(
+        self,
+        content: str,
+        model_config: models.ModelConfig,
+        api_key: str,
+    ) -> AIAssistantOutput:
+        payload = {
+            "model": model_config.model,
+            "temperature": 0,
+            "max_tokens": model_config.max_tokens,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Repair malformed model output into strict graph assistant JSON only. Do not add explanations.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Return valid JSON with keys answer, graph_references, web_references, cards, nodes, edges, warnings. "
+                        "Preserve the user's content where possible.\n\n"
+                        f"{content}"
+                    ),
+                },
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{model_config.base_url.rstrip('/')}/chat/completions"
+        data = self._post_chat_completion(url, headers, payload)
+        repaired_content = data["choices"][0]["message"]["content"]
+        try:
+            return _parse_assistant_output(repaired_content)
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise AIProviderError("模型返回格式异常，自动修复后仍无法解析图谱助手结果。") from exc
 
     def _post_chat_completion(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -505,6 +611,50 @@ def _build_target_prompt(
     )
 
 
+def _build_assistant_prompt(
+    question: str,
+    graph_context: str,
+    web_materials: list[Material],
+    knowledge_base_prompt: str | None = None,
+    selected_node_name: str | None = None,
+    create_candidates: bool = True,
+) -> str:
+    web_blocks = []
+    for index, material in enumerate(web_materials[:6]):
+        web_blocks.append(
+            f"[web:{index}] title: {material.title}\nurl: {material.url}\nsite: {material.site or ''}\ntext: {material.text[:1800]}"
+        )
+    candidate_instruction = (
+        "如果回答中有值得沉淀的新知识，请输出 1-5 张候选卡片，并在 nodes/edges 中给出可加入图谱的节点和关系；"
+        if create_candidates
+        else "本次不要输出候选卡片，cards、nodes、edges 返回空数组；"
+    )
+    selected_context = f"当前选中节点：{selected_node_name}\n" if selected_node_name else ""
+    web_context = "\n\n".join(web_blocks) if web_blocks else "本次没有联网补充材料。"
+    return (
+        f"用户问题：{question.strip()}\n"
+        f"{selected_context}"
+        f"{_preference_context(knowledge_base_prompt, None)}"
+        "你是知识图谱学习助手。请优先基于当前知识库回答；如果提供了联网材料，可以作为补充。"
+        "回答必须用中文，必须明确区分：图谱内容、联网补充、模型推断。"
+        "不要把联网补充当成已沉淀图谱事实；不要直接声明已加入图谱。"
+        f"{candidate_instruction}"
+        "严格返回 JSON，结构为："
+        "{\"answer\":\"包含 图谱内容/联网补充/模型推断 的中文回答\","
+        "\"graph_references\":[{\"kind\":\"graph\",\"title\":\"...\",\"summary\":\"...\",\"ref_id\":\"node:1\"}],"
+        "\"web_references\":[{\"kind\":\"web\",\"title\":\"...\",\"summary\":\"...\",\"ref_id\":\"source:1\",\"url\":\"https://...\"}],"
+        "\"cards\":[{\"type\":\"summary|keyword_hint|key_point|usage_method|practice_project|learning_path|recommended_reading\","
+        "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
+        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|method|source\",\"name\":\"...\","
+        "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
+        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"related|contains|prerequisite|applied_by|supported_by_source\","
+        "\"confidence\":0.7,\"source_indexes\":[0]}],"
+        "\"warnings\":[\"...\"]}。\n\n"
+        f"当前知识库上下文：\n{graph_context}\n\n"
+        f"联网补充材料：\n{web_context}"
+    )
+
+
 def _history_context(history_cards: list[models.Card], history_nodes: list[models.KnowledgeNode]) -> str:
     card_lines = [
         f"- 卡片：{card.title} / {card.summary[:180]}"
@@ -568,3 +718,7 @@ def _strip_code_fence(content: str) -> str:
 
 def _parse_ai_output(content: str) -> AIOutput:
     return AIOutput.model_validate(json.loads(_strip_code_fence(content)))
+
+
+def _parse_assistant_output(content: str) -> AIAssistantOutput:
+    return AIAssistantOutput.model_validate(json.loads(_strip_code_fence(content)))

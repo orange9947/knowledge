@@ -2,6 +2,16 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@antv/g6", () => ({
+  Graph: class {
+    constructor(_options: unknown) {}
+    destroy() {}
+    on() {}
+    render() {}
+    setOptions() {}
+  },
+}));
+
 import App from "./App";
 
 type MockGraphNode = {
@@ -253,6 +263,120 @@ describe("App", () => {
             error_summary: null,
             is_pinned: false,
             learning_prompt: "本次关注工具链",
+          }),
+        });
+      }
+      if (url.endsWith("/knowledge/assistant/query") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            answer: "图谱内容：RAG 已有基础关系。\n联网补充：补充了重排序方向。\n模型推断：建议下一步学习检索后处理。",
+            used_web: true,
+            run_id: 9,
+            graph_references: [
+              {
+                kind: "graph",
+                title: "RAG",
+                summary: "Retrieval augmented generation",
+                node_id: 1,
+                source_id: null,
+                url: null,
+              },
+            ],
+            web_references: [
+              {
+                kind: "web",
+                title: "RAG rerank guide",
+                summary: "联网补充材料",
+                node_id: null,
+                source_id: 9,
+                url: "https://example.com/rerank",
+              },
+            ],
+            candidate_cards: [
+              {
+                id: 91,
+                run_id: 9,
+                type: "keyword_hint",
+                title: "重排序",
+                summary: "检索后对候选内容重新排序",
+                details: null,
+                source_ids: [9],
+                approval_status: "candidate",
+              },
+            ],
+            warnings: [],
+          }),
+        });
+      }
+      if (url.endsWith("/runs/9/cards/approve") && init?.method === "POST") {
+        graphNodes = [
+          ...graphNodes,
+          {
+            id: 4,
+            knowledge_base_id: 1,
+            type: "concept",
+            name: "重排序",
+            normalized_name: "重排序",
+            summary: "检索后对候选内容重新排序",
+            aliases: [],
+            tags: ["keyword_hint"],
+          },
+        ];
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 9,
+            knowledge_base_id: 1,
+            keyword: "AI助手：我下一步应该学什么？",
+            mode: "light",
+            status: "completed",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: "2026-07-04T00:00:00Z",
+            language_policy: "zh-en-to-zh",
+            source_count: 1,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: false,
+            learning_prompt: null,
+          }),
+        });
+      }
+      if (url.endsWith("/runs/9")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            run: {
+              id: 9,
+              knowledge_base_id: 1,
+              keyword: "AI助手：我下一步应该学什么？",
+              mode: "light",
+              status: "completed",
+              created_at: "2026-07-04T00:00:00Z",
+              completed_at: "2026-07-04T00:00:00Z",
+              language_policy: "zh-en-to-zh",
+              source_count: 1,
+              token_usage_estimate: null,
+              error_summary: null,
+              is_pinned: false,
+              learning_prompt: null,
+            },
+            sources: [],
+            cards: [
+              {
+                id: 91,
+                run_id: 9,
+                type: "keyword_hint",
+                title: "重排序",
+                summary: "检索后对候选内容重新排序",
+                details: null,
+                source_ids: [9],
+                node_ids: [4],
+                sort_order: 0,
+                approval_status: "approved",
+                candidate_payload: null,
+              },
+            ],
           }),
         });
       }
@@ -665,9 +789,19 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "知识图谱" }));
     expect(screen.getByRole("heading", { name: "知识关系" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "运行" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "关系探索" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "类型分组" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "RAG" }));
     expect(await screen.findByText("Retrieval augmented generation")).toBeInTheDocument();
     expect(screen.getByText("相关关系")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "AI 助手" }));
+    await user.type(screen.getByLabelText("AI 助手问题"), "我下一步应该学什么？");
+    await user.click(screen.getByRole("button", { name: "提问" }));
+    expect(await screen.findByText(/图谱内容：RAG 已有基础关系/)).toBeInTheDocument();
+    expect(screen.getByText("RAG rerank guide")).toBeInTheDocument();
+    await user.click(screen.getByLabelText(/重排序/));
+    await user.click(screen.getByRole("button", { name: "加入选中知识" }));
+    expect(await screen.findByText("已将 1 张助手候选卡片加入图谱")).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "新建关键点" })[0]);
     await user.type(screen.getByLabelText("关键点名称"), "向量检索");
     await user.selectOptions(screen.getByLabelText("关键点类型"), "skill");

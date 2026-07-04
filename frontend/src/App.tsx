@@ -1,4 +1,5 @@
-import { type ChangeEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Graph } from "@antv/g6";
 import {
   Activity,
   BookOpen,
@@ -9,6 +10,7 @@ import {
   History,
   KeyRound,
   Library,
+  MessageSquareText,
   Pin,
   PinOff,
   Play,
@@ -19,6 +21,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import {
@@ -45,6 +48,7 @@ import {
   fetchRuns,
   fetchSourceSettings,
   importKnowledge,
+  queryAssistant,
   saveModelSettings,
   saveSourceSettings,
   summarizeRun,
@@ -53,6 +57,7 @@ import {
   updateKnowledgeNode,
   updateRunRetention,
   updateSourceRetention,
+  type AssistantResponse,
   type GraphData,
   type HealthResponse,
   type KnowledgeBase,
@@ -68,6 +73,7 @@ import {
   type SourceSettings,
   type SourceSettingsInput,
 } from "./api";
+import { graphNodeTypes, prepareGraphData, type GraphViewMode } from "./graphUtils";
 
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
@@ -357,6 +363,12 @@ function App() {
   const [isEditingNode, setIsEditingNode] = useState(false);
   const [selectedRun, setSelectedRun] = useState<LearningRun | null>(null);
   const [modelForm, setModelForm] = useState(emptyModelForm);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantAllowWeb, setAssistantAllowWeb] = useState(true);
+  const [assistantCreateCandidates, setAssistantCreateCandidates] = useState(true);
+  const [assistantResponse, setAssistantResponse] = useState<AssistantResponse | null>(null);
+  const [assistantSelectedCardIds, setAssistantSelectedCardIds] = useState<number[]>([]);
   const [message, setMessage] = useState<string>("准备就绪");
   const [busy, setBusy] = useState(false);
 
@@ -425,6 +437,8 @@ function App() {
         setNodeForm(emptyNodeForm);
         setIsEditingNode(false);
         setSelectedRun(null);
+        setAssistantResponse(null);
+        setAssistantSelectedCardIds([]);
       } catch (error) {
         if (!mounted) return;
         setMessage(error instanceof Error ? error.message : "加载知识库数据失败");
@@ -884,6 +898,80 @@ function App() {
     }
   }
 
+  async function handleAskAssistant() {
+    if (!activeKnowledgeBaseId) {
+      setMessage("请先创建或选择知识库");
+      return;
+    }
+    const question = assistantQuestion.trim();
+    if (!question) {
+      setMessage("请输入要问 AI 助手的问题");
+      return;
+    }
+    setBusy(true);
+    setMessage(assistantAllowWeb ? "AI 助手正在检索图谱并联网补充..." : "AI 助手正在检索图谱...");
+    try {
+      const response = await queryAssistant({
+        knowledge_base_id: activeKnowledgeBaseId,
+        question,
+        selected_node_id: selectedNode?.id ?? null,
+        allow_web: assistantAllowWeb,
+        create_candidates: assistantCreateCandidates,
+      });
+      setAssistantResponse(response);
+      setAssistantSelectedCardIds([]);
+      setMessage(
+        response.candidate_cards.length > 0
+          ? `AI 助手已回答，并生成 ${response.candidate_cards.length} 张候选卡片`
+          : "AI 助手已回答",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "AI 助手请求失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleToggleAssistantCandidate(cardId: number, selected: boolean) {
+    setAssistantSelectedCardIds((current) => {
+      if (selected) return current.includes(cardId) ? current : [...current, cardId];
+      return current.filter((id) => id !== cardId);
+    });
+  }
+
+  async function handleApproveAssistantCandidates() {
+    if (!assistantResponse?.run_id || assistantSelectedCardIds.length === 0) {
+      setMessage("请选择要加入图谱的助手候选卡片");
+      return;
+    }
+    setBusy(true);
+    setMessage("正在将助手候选卡片加入图谱...");
+    try {
+      const updated = await approveRunCards(assistantResponse.run_id, assistantSelectedCardIds);
+      await refreshActiveKnowledgeBase(updated.knowledge_base_id);
+      const detail = await fetchRunDetail(updated.id);
+      setSelectedRun(detail.run);
+      setCards(detail.cards);
+      setRunSources(detail.sources);
+      setAssistantResponse((current) => current
+        ? {
+            ...current,
+            candidate_cards: current.candidate_cards.map((card) => (
+              card.id !== null && assistantSelectedCardIds.includes(card.id)
+                ? { ...card, approval_status: "approved" }
+                : card
+            )),
+          }
+        : current);
+      setAssistantSelectedCardIds([]);
+      setMessage(`已将 ${assistantSelectedCardIds.length} 张助手候选卡片加入图谱`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "助手候选卡片加入图谱失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSelectRun(runId: number) {
     setMessage("正在加载任务详情...");
     try {
@@ -1091,18 +1179,31 @@ function App() {
         {activeView === "graph" ? (
           <section className="single-view" aria-label="知识图谱工作区">
             <GraphPanel
+              assistantAllowWeb={assistantAllowWeb}
+              assistantCreateCandidates={assistantCreateCandidates}
+              assistantOpen={assistantOpen}
+              assistantQuestion={assistantQuestion}
+              assistantResponse={assistantResponse}
+              assistantSelectedCardIds={assistantSelectedCardIds}
               busy={busy}
               graph={graph}
               isEditingNode={isEditingNode}
               knowledgeBaseName={activeKnowledgeBase ? knowledgeBaseName(activeKnowledgeBase) : "当前知识库"}
               nodeForm={nodeForm}
+              onApproveAssistantCandidates={handleApproveAssistantCandidates}
+              onAskAssistant={handleAskAssistant}
               onCancelNodeEdit={handleCancelNodeEdit}
               onDeleteNode={handleDeleteNode}
               onEditNode={handleEditNode}
               onNodeFormChange={handleNodeFormChange}
               onSaveNode={handleSaveNode}
               onSelectNode={handleSelectNode}
+              onSetAssistantAllowWeb={setAssistantAllowWeb}
+              onSetAssistantCreateCandidates={setAssistantCreateCandidates}
+              onSetAssistantOpen={setAssistantOpen}
+              onSetAssistantQuestion={setAssistantQuestion}
               onStartNewNode={handleStartNewNode}
+              onToggleAssistantCandidate={handleToggleAssistantCandidate}
               selectedNode={selectedNode}
             />
           </section>
@@ -1492,44 +1593,73 @@ function AnalysisModelConfig({
 }
 
 function GraphPanel({
+  assistantAllowWeb,
+  assistantCreateCandidates,
+  assistantOpen,
+  assistantQuestion,
+  assistantResponse,
+  assistantSelectedCardIds,
   busy,
   graph,
   isEditingNode,
   knowledgeBaseName,
   nodeForm,
+  onApproveAssistantCandidates,
+  onAskAssistant,
   onCancelNodeEdit,
   onDeleteNode,
   onEditNode,
   onNodeFormChange,
   onSaveNode,
   onSelectNode,
+  onSetAssistantAllowWeb,
+  onSetAssistantCreateCandidates,
+  onSetAssistantOpen,
+  onSetAssistantQuestion,
   onStartNewNode,
+  onToggleAssistantCandidate,
   selectedNode,
 }: {
+  assistantAllowWeb: boolean;
+  assistantCreateCandidates: boolean;
+  assistantOpen: boolean;
+  assistantQuestion: string;
+  assistantResponse: AssistantResponse | null;
+  assistantSelectedCardIds: number[];
   busy: boolean;
   graph: GraphData;
   isEditingNode: boolean;
   knowledgeBaseName: string;
   nodeForm: NodeFormState;
+  onApproveAssistantCandidates: () => void;
+  onAskAssistant: () => void;
   onCancelNodeEdit: () => void;
   onDeleteNode: () => void;
   onEditNode: () => void;
   onNodeFormChange: (patch: Partial<NodeFormState>) => void;
   onSaveNode: () => void;
   onSelectNode: (nodeId: number) => void;
+  onSetAssistantAllowWeb: (value: boolean) => void;
+  onSetAssistantCreateCandidates: (value: boolean) => void;
+  onSetAssistantOpen: (value: boolean) => void;
+  onSetAssistantQuestion: (value: string) => void;
   onStartNewNode: () => void;
+  onToggleAssistantCandidate: (cardId: number, selected: boolean) => void;
   selectedNode: KnowledgeNode | null;
 }) {
-  const layout = buildGraphLayout(graph);
+  const [viewMode, setViewMode] = useState<GraphViewMode>("explore");
+  const [graphQuery, setGraphQuery] = useState("");
+  const [graphType, setGraphType] = useState("all");
+  const [graphDepth, setGraphDepth] = useState(1);
+  const graphTypes = useMemo(() => graphNodeTypes(graph), [graph]);
+  const preparedGraph = useMemo(() => prepareGraphData(graph, {
+    depth: graphDepth,
+    query: graphQuery,
+    selectedNodeId: selectedNode?.id ?? null,
+    type: graphType,
+    viewMode,
+  }), [graph, graphDepth, graphQuery, graphType, selectedNode?.id, viewMode]);
   const relatedEdges = selectedNode ? relatedEdgesForNode(graph, selectedNode.id) : [];
-  const selectedNodeIds = new Set<number>();
-  if (selectedNode) {
-    selectedNodeIds.add(selectedNode.id);
-    relatedEdges.forEach((edge) => {
-      selectedNodeIds.add(edge.source_node_id);
-      selectedNodeIds.add(edge.target_node_id);
-    });
-  }
 
   return (
     <div className="panel graph-panel">
@@ -1543,17 +1673,56 @@ function GraphPanel({
             <CirclePlus size={16} />
             <span>新建关键点</span>
           </button>
+          <button className="secondary-button" type="button" onClick={() => onSetAssistantOpen(true)} disabled={busy}>
+            <MessageSquareText size={16} />
+            <span>AI 助手</span>
+          </button>
           <GitBranch size={19} />
         </div>
       </div>
       <div className="graph-summary">
         <span>{graph.nodes.length} 个节点</span>
         <span>{graph.edges.length} 条关系</span>
+        <span>当前显示 {preparedGraph.nodes.length} 个</span>
         <span>{knowledgeBaseName}</span>
       </div>
+      <div className="graph-toolbar" aria-label="图谱筛选工具">
+        <div className="segmented compact">
+          <button className={viewMode === "explore" ? "active" : ""} type="button" onClick={() => setViewMode("explore")}>关系探索</button>
+          <button className={viewMode === "types" ? "active" : ""} type="button" onClick={() => setViewMode("types")}>类型分组</button>
+          <button className={viewMode === "path" ? "active" : ""} type="button" onClick={() => setViewMode("path")}>学习路径</button>
+        </div>
+        <label>
+          <Search size={15} />
+          <input
+            aria-label="搜索图谱节点"
+            value={graphQuery}
+            onChange={(event) => setGraphQuery(event.target.value)}
+            placeholder="搜索节点"
+          />
+        </label>
+        <select aria-label="节点类型筛选" value={graphType} onChange={(event) => setGraphType(event.target.value)}>
+          <option value="all">全部类型</option>
+          {graphTypes.map((type) => (
+            <option key={type} value={type}>{nodeTypeLabel(type)}</option>
+          ))}
+        </select>
+        <label className="depth-control">
+          <span>深度</span>
+          <input
+            aria-label="关系深度"
+            max="3"
+            min="1"
+            type="range"
+            value={graphDepth}
+            onChange={(event) => setGraphDepth(Number(event.target.value))}
+          />
+          <strong>{graphDepth}</strong>
+        </label>
+      </div>
       <div className="graph-workbench">
-        <div className="graph-canvas" aria-label="知识图谱固定视图">
-          {layout.nodes.length === 0 ? (
+        <div className="graph-canvas" aria-label="知识图谱工作台">
+          {preparedGraph.nodes.length === 0 ? (
             <div className="graph-empty">
               <strong>{knowledgeBaseName}</strong>
               <span>暂无关键点</span>
@@ -1564,38 +1733,27 @@ function GraphPanel({
             </div>
           ) : (
             <>
-              <svg className="graph-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                {layout.edges.map((edge) => {
-                  const active = selectedNode
-                    ? edge.source_node_id === selectedNode.id || edge.target_node_id === selectedNode.id
-                    : false;
-                  return (
-                    <line
-                      className={active ? "graph-link active" : "graph-link"}
-                      key={edge.id}
-                      x1={edge.x1}
-                      y1={edge.y1}
-                      x2={edge.x2}
-                      y2={edge.y2}
-                    />
-                  );
-                })}
-              </svg>
-              {layout.nodes.map((item) => (
-                <button
-                  aria-label={item.node.name}
-                  className={`node graph-node node-${nodeVisualType(item.node.type)} ${
-                    selectedNode?.id === item.node.id ? "selected" : ""
-                  } ${selectedNode && !selectedNodeIds.has(item.node.id) ? "dimmed" : ""}`}
-                  key={item.node.id}
-                  onClick={() => onSelectNode(item.node.id)}
-                  style={{ left: `${item.x}%`, top: `${item.y}%` }}
-                  type="button"
-                >
-                  <span>{item.node.name}</span>
-                  <small>{nodeTypeLabel(item.node.type)}</small>
-                </button>
-              ))}
+              <G6GraphCanvas
+                edges={preparedGraph.edges}
+                nodes={preparedGraph.nodes}
+                onSelectNode={onSelectNode}
+                selectedNodeId={selectedNode?.id ?? null}
+                viewMode={viewMode}
+              />
+              <div className="graph-node-list" aria-label="图谱节点列表">
+                {preparedGraph.nodes.map((node) => (
+                  <button
+                    aria-label={node.name}
+                    className={`graph-node-chip node-${nodeVisualType(node.type)} ${selectedNode?.id === node.id ? "selected" : ""}`}
+                    key={node.id}
+                    onClick={() => onSelectNode(node.id)}
+                    type="button"
+                  >
+                    <span>{node.name}</span>
+                    <small>{nodeTypeLabel(node.type)}</small>
+                  </button>
+                ))}
+              </div>
             </>
           )}
         </div>
@@ -1653,7 +1811,249 @@ function GraphPanel({
           )}
         </div>
       </div>
+      <AssistantDrawer
+        allowWeb={assistantAllowWeb}
+        busy={busy}
+        createCandidates={assistantCreateCandidates}
+        onApproveCandidates={onApproveAssistantCandidates}
+        onAsk={onAskAssistant}
+        onClose={() => onSetAssistantOpen(false)}
+        onQuestionChange={onSetAssistantQuestion}
+        onToggleAllowWeb={onSetAssistantAllowWeb}
+        onToggleCandidate={onToggleAssistantCandidate}
+        onToggleCreateCandidates={onSetAssistantCreateCandidates}
+        open={assistantOpen}
+        question={assistantQuestion}
+        response={assistantResponse}
+        selectedCardIds={assistantSelectedCardIds}
+        selectedNode={selectedNode}
+      />
     </div>
+  );
+}
+
+function G6GraphCanvas({
+  edges,
+  nodes,
+  onSelectNode,
+  selectedNodeId,
+  viewMode,
+}: {
+  edges: GraphData["edges"];
+  nodes: Array<KnowledgeNode & { group: string; priority: number }>;
+  onSelectNode: (nodeId: number) => void;
+  selectedNodeId: number | null;
+  viewMode: GraphViewMode;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const graphRef = useRef<Graph | null>(null);
+  const data = useMemo(() => ({
+    nodes: nodes.map((node) => ({
+      id: String(node.id),
+      data: {
+        label: node.name,
+        type: node.type,
+        group: node.group,
+        priority: node.priority,
+        selected: node.id === selectedNodeId,
+      },
+    })),
+    edges: edges.map((edge) => ({
+      id: String(edge.id),
+      source: String(edge.source_node_id),
+      target: String(edge.target_node_id),
+      data: { label: edge.type },
+    })),
+  }), [edges, nodes, selectedNodeId]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const layout =
+      viewMode === "path"
+        ? { type: "dagre", rankdir: "LR", nodeSize: 42, ranksep: 92 }
+        : viewMode === "types"
+          ? { type: "grid", preventOverlap: true }
+          : { type: "force", preventOverlap: true, linkDistance: 148 };
+    const options = {
+      container: containerRef.current,
+      autoFit: "view" as const,
+      data,
+      layout,
+      node: {
+        type: "circle",
+        style: {
+          size: (datum: { data?: { selected?: boolean } }) => (datum.data?.selected ? 48 : 36),
+          fill: (datum: { data?: { type?: string } }) => nodeColor(datum.data?.type || "concept"),
+          stroke: (datum: { data?: { selected?: boolean } }) => (datum.data?.selected ? "#121815" : "#ffffff"),
+          lineWidth: (datum: { data?: { selected?: boolean } }) => (datum.data?.selected ? 4 : 2),
+          labelText: (datum: { data?: { label?: string } }) => datum.data?.label || "",
+          labelFill: "#24312b",
+          labelFontSize: 12,
+          labelFontWeight: 800,
+          labelPlacement: "bottom",
+          labelMaxWidth: 120,
+        },
+        palette: viewMode === "types" ? { type: "group", field: "group" } : undefined,
+      },
+      edge: {
+        type: "line",
+        style: {
+          stroke: "#9fb0a7",
+          lineWidth: 1.2,
+          endArrow: true,
+          labelText: "",
+        },
+      },
+      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+    } as unknown as ConstructorParameters<typeof Graph>[0];
+    if (!graphRef.current) {
+      graphRef.current = new Graph(options);
+      graphRef.current.on("node:click", (event) => {
+        const nodeId = Number(readGraphTargetId((event as { target?: unknown }).target));
+        if (Number.isFinite(nodeId)) onSelectNode(nodeId);
+      });
+    } else {
+      graphRef.current.setOptions(options);
+    }
+    graphRef.current.render();
+    return () => {
+      graphRef.current?.destroy();
+      graphRef.current = null;
+    };
+  }, [data, onSelectNode, viewMode]);
+
+  return <div className="g6-canvas" ref={containerRef} />;
+}
+
+function AssistantDrawer({
+  allowWeb,
+  busy,
+  createCandidates,
+  onApproveCandidates,
+  onAsk,
+  onClose,
+  onQuestionChange,
+  onToggleAllowWeb,
+  onToggleCandidate,
+  onToggleCreateCandidates,
+  open,
+  question,
+  response,
+  selectedCardIds,
+  selectedNode,
+}: {
+  allowWeb: boolean;
+  busy: boolean;
+  createCandidates: boolean;
+  onApproveCandidates: () => void;
+  onAsk: () => void;
+  onClose: () => void;
+  onQuestionChange: (value: string) => void;
+  onToggleAllowWeb: (value: boolean) => void;
+  onToggleCandidate: (cardId: number, selected: boolean) => void;
+  onToggleCreateCandidates: (value: boolean) => void;
+  open: boolean;
+  question: string;
+  response: AssistantResponse | null;
+  selectedCardIds: number[];
+  selectedNode: KnowledgeNode | null;
+}) {
+  return (
+    <aside className={open ? "assistant-drawer open" : "assistant-drawer"} aria-label="图谱 AI 助手">
+      <div className="assistant-header">
+        <div>
+          <p className="eyebrow">图谱 AI 助手</p>
+          <h3>{selectedNode ? selectedNode.name : "当前知识库"}</h3>
+        </div>
+        <button className="icon-action" type="button" onClick={onClose} aria-label="关闭 AI 助手">
+          <X size={16} />
+        </button>
+      </div>
+      <textarea
+        aria-label="AI 助手问题"
+        value={question}
+        onChange={(event) => onQuestionChange(event.target.value)}
+        placeholder="例如：围绕这个节点，我下一步应该学什么？"
+      />
+      <div className="assistant-switches">
+        <label>
+          <input checked={allowWeb} type="checkbox" onChange={(event) => onToggleAllowWeb(event.target.checked)} />
+          <span>允许联网补充</span>
+        </label>
+        <label>
+          <input checked={createCandidates} type="checkbox" onChange={(event) => onToggleCreateCandidates(event.target.checked)} />
+          <span>生成候选卡片</span>
+        </label>
+      </div>
+      <button className="primary-button" type="button" onClick={onAsk} disabled={busy}>
+        <Sparkles size={16} />
+        <span>提问</span>
+      </button>
+      {response ? (
+        <div className="assistant-result">
+          <section>
+            <h4>回答</h4>
+            <p>{response.answer}</p>
+          </section>
+          <ReferenceList title="图谱引用" references={response.graph_references} />
+          <ReferenceList title="联网补充" references={response.web_references} />
+          {response.warnings.length > 0 ? (
+            <section>
+              <h4>提示</h4>
+              {response.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+            </section>
+          ) : null}
+          {response.candidate_cards.length > 0 ? (
+            <section className="assistant-candidates">
+              <h4>候选知识</h4>
+              {response.candidate_cards.map((card) => (
+                <label key={card.id ?? card.title}>
+                  <input
+                    checked={card.id !== null && selectedCardIds.includes(card.id)}
+                    disabled={busy || card.id === null || card.approval_status === "approved"}
+                    type="checkbox"
+                    onChange={(event) => card.id !== null && onToggleCandidate(card.id, event.target.checked)}
+                  />
+                  <span>
+                    <strong>{card.title}</strong>
+                    <small>{card.approval_status === "approved" ? "已加入" : card.summary}</small>
+                  </span>
+                </label>
+              ))}
+              <button className="secondary-button" type="button" onClick={onApproveCandidates} disabled={busy || selectedCardIds.length === 0}>
+                <GitBranch size={16} />
+                <span>加入选中知识</span>
+              </button>
+            </section>
+          ) : null}
+        </div>
+      ) : (
+        <p className="empty-state compact">选择节点后提问，助手会优先读取当前图谱，必要时联网补充。</p>
+      )}
+    </aside>
+  );
+}
+
+function ReferenceList({ references, title }: { references: AssistantResponse["graph_references"]; title: string }) {
+  if (references.length === 0) return null;
+  return (
+    <section>
+      <h4>{title}</h4>
+      <div className="assistant-reference-list">
+        {references.map((reference, index) => (
+          <a
+            href={reference.url ?? "#"}
+            key={`${reference.title}-${index}`}
+            onClick={(event) => { if (!reference.url) event.preventDefault(); }}
+            target={reference.url ? "_blank" : undefined}
+            rel={reference.url ? "noreferrer" : undefined}
+          >
+            <strong>{reference.title}</strong>
+            {reference.summary ? <span>{reference.summary}</span> : null}
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2297,6 +2697,28 @@ function nodeVisualType(type: string) {
   return "concept";
 }
 
+function nodeColor(type: string) {
+  if (type === "keyword") return "#121815";
+  if (type === "skill" || type === "tool" || type === "method") return "#436f93";
+  if (type === "project") return "#b76d21";
+  if (type === "source") return "#6c766f";
+  return "#1a8f72";
+}
+
+function readGraphTargetId(target: unknown): string | number | null {
+  if (!target || typeof target !== "object") return null;
+  const directId = (target as { id?: string | number }).id;
+  if (directId !== undefined) return directId;
+  const configId = (target as { config?: { id?: string | number } }).config?.id;
+  if (configId !== undefined) return configId;
+  const get = (target as { get?: (key: string) => unknown }).get;
+  if (typeof get === "function") {
+    const value = get.call(target, "id");
+    if (typeof value === "string" || typeof value === "number") return value;
+  }
+  return null;
+}
+
 function cardTypeLabel(type: string) {
   return cardTypeLabels[type] ?? type;
 }
@@ -2360,34 +2782,6 @@ function splitTextList(value: string): string[] {
     });
 }
 
-function buildGraphLayout(graph: GraphData) {
-  const nodes = graph.nodes.map((node, index) => {
-    if (graph.nodes.length === 1) {
-      return { node, x: 50, y: 50 };
-    }
-    const columns = Math.min(4, Math.ceil(Math.sqrt(graph.nodes.length)));
-    const rows = Math.ceil(graph.nodes.length / columns);
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const x = columns === 1 ? 50 : 16 + column * (68 / Math.max(columns - 1, 1));
-    const y = rows === 1 ? 50 : 18 + row * (64 / Math.max(rows - 1, 1));
-    const offset = row % 2 === 1 ? Math.min(6, 18 / columns) : 0;
-    return {
-      node,
-      x: Math.max(10, Math.min(90, x + offset)),
-      y,
-    };
-  });
-  const nodeMap = new Map(nodes.map((item) => [item.node.id, item]));
-  const edges = graph.edges.flatMap((edge) => {
-    const source = nodeMap.get(edge.source_node_id);
-    const target = nodeMap.get(edge.target_node_id);
-    if (!source || !target) return [];
-    return [{ ...edge, x1: source.x, y1: source.y, x2: target.x, y2: target.y }];
-  });
-  return { nodes, edges };
-}
-
 function relatedEdgesForNode(graph: GraphData, nodeId: number) {
   return graph.edges.filter((edge) => edge.source_node_id === nodeId || edge.target_node_id === nodeId);
 }
@@ -2395,7 +2789,7 @@ function relatedEdgesForNode(graph: GraphData, nodeId: number) {
 function analysisModeLabel(cards: LearningCard[], modelSettings: ModelSettings | null): string {
   if (cards.length === 0) return "未生成阅读分析";
   const hasFallbackMarker = cards.some((card) => `${card.summary} ${card.details ?? ""}`.toLowerCase().includes("fallback"));
-  if (hasFallbackMarker || !modelSettings?.api_key_reference) return "fallback 简略提纲";
+  if (hasFallbackMarker || !modelSettings?.api_key_reference) return "备用简略提纲";
   return "模型阅读分析";
 }
 

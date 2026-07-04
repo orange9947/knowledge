@@ -348,7 +348,22 @@ h3 {
   box-shadow: 0 12px 24px rgba(67, 111, 147, 0.22);
 }
 
+.primary-button {
+  min-height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: var(--green-dark);
+  box-shadow: 0 10px 22px rgba(13, 95, 77, 0.2);
+}
+
 .run-button:disabled,
+.primary-button:disabled,
 .secondary-button:disabled,
 .icon-action:disabled {
   cursor: not-allowed;
@@ -665,6 +680,139 @@ h3 {
   font-weight: 800;
 }
 
+.graph-toolbar {
+  padding: 12px 16px 0;
+  display: grid;
+  grid-template-columns: auto minmax(170px, 1fr) minmax(130px, 0.35fr) minmax(150px, 0.35fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.segmented {
+  min-height: 38px;
+  padding: 4px;
+  display: grid;
+  grid-auto-flow: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #edf3ef;
+}
+
+.segmented button {
+  min-width: 86px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.segmented button.active {
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 6px 14px rgba(18, 24, 21, 0.08);
+}
+
+.graph-toolbar label {
+  min-height: 38px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.graph-toolbar input,
+.graph-toolbar select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.graph-toolbar > select {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.depth-control span,
+.depth-control strong {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.g6-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.graph-node-list {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  max-height: 108px;
+  overflow: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid rgba(216, 227, 221, 0.76);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(12px);
+}
+
+.graph-node-chip {
+  min-height: 32px;
+  max-width: 180px;
+  padding: 6px 9px;
+  display: inline-grid;
+  gap: 1px;
+  border: 0;
+  border-radius: 7px;
+  color: #ffffff;
+  text-align: left;
+  box-shadow: 0 8px 18px rgba(22, 36, 29, 0.14);
+}
+
+.graph-node-chip span,
+.graph-node-chip small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-node-chip span {
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.graph-node-chip small {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.graph-node-chip.selected {
+  outline: 3px solid rgba(18, 24, 21, 0.16);
+  outline-offset: 2px;
+}
+
 .node {
   position: absolute;
   z-index: 2;
@@ -725,6 +873,10 @@ h3 {
   background: var(--amber);
 }
 
+.node-source {
+  background: #6c766f;
+}
+
 .graph-links {
   position: absolute;
   inset: 0;
@@ -752,6 +904,133 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
+}
+
+.assistant-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  width: min(420px, calc(100vw - 24px));
+  height: 100vh;
+  padding: 16px;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  border-left: 1px solid var(--line);
+  background: rgba(251, 252, 251, 0.96);
+  box-shadow: -24px 0 54px rgba(18, 24, 21, 0.14);
+  transform: translateX(104%);
+  transition: transform 180ms ease;
+}
+
+.assistant-drawer.open {
+  transform: translateX(0);
+}
+
+.assistant-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assistant-drawer textarea {
+  width: 100%;
+  min-height: 94px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--paper);
+  outline: 0;
+}
+
+.assistant-switches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.assistant-switches label,
+.assistant-candidates label {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.assistant-result {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding-right: 2px;
+}
+
+.assistant-result section {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.assistant-result h4 {
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+}
+
+.assistant-result p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.assistant-reference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-reference-list a {
+  min-width: 0;
+  padding: 8px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #edf1ee;
+  border-radius: 7px;
+  color: var(--ink);
+  text-decoration: none;
+  background: #f8faf8;
+}
+
+.assistant-reference-list span,
+.assistant-candidates small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.42;
+}
+
+.assistant-candidates {
+  display: grid;
+  gap: 10px;
+}
+
+.assistant-candidates label {
+  padding: 9px;
+  border: 1px solid #edf1ee;
+  border-radius: 7px;
+  background: #f8faf8;
+}
+
+.assistant-candidates label > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .node-detail-header {
@@ -1471,6 +1750,15 @@ h3 {
     grid-template-columns: 1fr;
   }
 
+  .graph-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .segmented {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .single-view .graph-canvas {
     min-height: 420px;
   }
@@ -1506,6 +1794,14 @@ h3 {
 
   .graph-canvas {
     min-height: 340px;
+  }
+
+  .assistant-drawer {
+    width: calc(100vw - 12px);
+  }
+
+  .assistant-switches {
+    grid-template-columns: 1fr;
   }
 
   .node {

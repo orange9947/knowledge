@@ -795,3 +795,170 @@ def test_delete_last_knowledge_base_is_rejected(client: TestClient):
 
     assert response.status_code == 409
     assert response.json()["detail"] == "至少需要保留一个知识库"
+
+
+def test_graph_assistant_answers_and_persists_candidate_cards(client: TestClient, monkeypatch):
+    base_response = client.post("/knowledge-bases", json={"name": "Assistant Base"})
+    knowledge_base_id = base_response.json()["id"]
+    run_response = client.post(
+        "/runs",
+        json={"keyword": "Graph RAG", "mode": "light", "knowledge_base_id": knowledge_base_id},
+    )
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+    cards = client.get(f"/runs/{run_id}/cards").json()
+    client.post(
+        f"/runs/{run_id}/cards/approve",
+        json={"card_ids": [card["id"] for card in cards]},
+    )
+    graph = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    selected_node_id = graph["nodes"][0]["id"]
+
+    client.put(
+        "/settings/model",
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "api_key": "sk-1234567890abcdef",
+            "default_temperature": 0,
+            "max_tokens": 4096,
+        },
+    )
+    original_client = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = """
+        {
+          "answer": "图谱内容：Graph RAG 已包含基础关系。\\n联网补充：本次未使用。\\n模型推断：可以继续学习重排序。",
+          "graph_references": [{"kind": "graph", "title": "Graph RAG", "summary": "图谱主题", "ref_id": "node:1"}],
+          "web_references": [],
+          "cards": [
+            {"type": "keyword_hint", "title": "重排序", "summary": "RAG 检索后的排序方法", "details": "适合作为后续学习点", "source_indexes": []}
+          ],
+          "nodes": [
+            {"type": "concept", "name": "重排序", "summary": "优化检索结果顺序", "aliases": ["Rerank"], "tags": ["keyword_hint"]},
+            {"type": "keyword", "name": "Graph RAG", "summary": "图谱主题", "aliases": [], "tags": ["keyword"]}
+          ],
+          "edges": [
+            {"source": "Graph RAG", "target": "重排序", "type": "related", "confidence": 0.82, "source_indexes": []}
+          ],
+          "warnings": []
+        }
+        """
+        return httpx.Response(200, request=request, json={"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(transport=httpx.MockTransport(handler)))
+
+    response = client.post(
+        "/knowledge/assistant/query",
+        json={
+            "knowledge_base_id": knowledge_base_id,
+            "question": "我下一步应该学什么？",
+            "selected_node_id": selected_node_id,
+            "allow_web": False,
+            "create_candidates": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "图谱内容" in payload["answer"]
+    assert payload["used_web"] is False
+    assert payload["run_id"] is not None
+    assert payload["candidate_cards"][0]["title"] == "重排序"
+    graph_before_approval = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    assert not any(node["name"] == "重排序" for node in graph_before_approval["nodes"])
+
+    assistant_run_id = payload["run_id"]
+    assistant_card_id = payload["candidate_cards"][0]["id"]
+    approve_response = client.post(
+        f"/runs/{assistant_run_id}/cards/approve",
+        json={"card_ids": [assistant_card_id]},
+    )
+
+    assert approve_response.status_code == 200
+    graph_after_approval = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    assert any(node["name"] == "重排序" for node in graph_after_approval["nodes"])
+
+
+def test_graph_assistant_web_supplement_can_be_toggled(client: TestClient, monkeypatch):
+    knowledge_base_id = client.get("/knowledge-bases").json()[0]["id"]
+    client.put(
+        "/settings/model",
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "api_key": "sk-1234567890abcdef",
+            "default_temperature": 0,
+            "max_tokens": 4096,
+        },
+    )
+    client.put(
+        "/settings/sources",
+        json=[
+            {
+                "name": "Assistant Doc",
+                "type": "entry_url",
+                "enabled": True,
+                "url_or_domain": "https://docs.example.com/agent",
+                "language_hint": "en",
+            },
+        ],
+    )
+    original_client = httpx.Client
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        requested_urls.append(url)
+        if "docs.example.com/agent" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html><title>Agent Doc</title><body><p>" + ("AI Agent web body " * 80) + "</p></body></html>",
+            )
+        content = """
+        {
+          "answer": "图谱内容：当前图谱内容有限。\\n联网补充：参考网页材料补充。\\n模型推断：建议先学习工具调用。",
+          "graph_references": [],
+          "web_references": [],
+          "cards": [],
+          "nodes": [],
+          "edges": [],
+          "warnings": []
+        }
+        """
+        return httpx.Response(200, request=request, json={"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(transport=httpx.MockTransport(handler)))
+
+    disabled_response = client.post(
+        "/knowledge/assistant/query",
+        json={
+            "knowledge_base_id": knowledge_base_id,
+            "question": "AI Agent 如何入门？",
+            "allow_web": False,
+            "create_candidates": False,
+        },
+    )
+    assert disabled_response.status_code == 200
+    assert not any("docs.example.com/agent" in url for url in requested_urls)
+
+    enabled_response = client.post(
+        "/knowledge/assistant/query",
+        json={
+            "knowledge_base_id": knowledge_base_id,
+            "question": "AI Agent 如何入门？",
+            "allow_web": True,
+            "create_candidates": False,
+        },
+    )
+
+    assert enabled_response.status_code == 200
+    payload = enabled_response.json()
+    assert payload["used_web"] is True
+    assert any("docs.example.com/agent" in url for url in requested_urls)
+    assert payload["web_references"][0]["url"] == "https://docs.example.com/agent"

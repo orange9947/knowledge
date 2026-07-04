@@ -10,6 +10,8 @@ from app.database import get_session, init_db
 from app.portable import export_knowledge, import_knowledge
 from app.repositories import KnowledgeRepository
 from app.schemas import (
+    AssistantQueryRequest,
+    AssistantQueryResponse,
     CardRead,
     CardApprovalRequest,
     GraphRead,
@@ -33,6 +35,7 @@ from app.schemas import (
     SourceConfigWrite,
     SourceRead,
 )
+from app.assistant import GraphAssistantService
 from app.services import LearningRunService
 from app.ai import AIOrchestrator, AIProviderError
 from app import models
@@ -347,6 +350,18 @@ def get_knowledge_graph(knowledge_base_id: int | None = None, session: Session =
         raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
     nodes, edges = repository.list_graph(resolved_id)
     return GraphRead(nodes=nodes, edges=edges)
+
+
+@app.post("/knowledge/assistant/query", response_model=AssistantQueryResponse)
+def query_knowledge_assistant(payload: AssistantQueryRequest, session: Session = Depends(get_session)):
+    try:
+        return GraphAssistantService(session).answer(payload)
+    except ValueError as exc:
+        message = str(exc)
+        status = 404 if message in {KNOWLEDGE_BASE_NOT_FOUND, NODE_NOT_FOUND} else 400
+        raise HTTPException(status_code=status, detail=message) from exc
+    except AIProviderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @app.post("/knowledge/nodes", response_model=KnowledgeNodeRead, status_code=201)

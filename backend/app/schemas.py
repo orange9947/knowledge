@@ -203,6 +203,44 @@ class CardApprovalRequest(BaseModel):
     card_ids: list[int] = Field(min_length=1)
 
 
+class AssistantQueryRequest(BaseModel):
+    knowledge_base_id: int
+    question: str = Field(min_length=1, max_length=2000)
+    selected_node_id: int | None = None
+    allow_web: bool = True
+    create_candidates: bool = True
+
+
+class AssistantReference(BaseModel):
+    kind: Literal["graph", "web", "model"]
+    title: str
+    summary: str | None = None
+    node_id: int | None = None
+    source_id: int | None = None
+    url: str | None = None
+
+
+class AssistantCandidateCard(BaseModel):
+    id: int | None = None
+    run_id: int | None = None
+    type: str
+    title: str
+    summary: str
+    details: str | None = None
+    source_ids: list[int] = Field(default_factory=list)
+    approval_status: str = "candidate"
+
+
+class AssistantQueryResponse(BaseModel):
+    answer: str
+    used_web: bool = False
+    run_id: int | None = None
+    graph_references: list[AssistantReference] = Field(default_factory=list)
+    web_references: list[AssistantReference] = Field(default_factory=list)
+    candidate_cards: list[AssistantCandidateCard] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class KnowledgeNodeCreate(BaseModel):
     knowledge_base_id: int
     type: str = Field(min_length=1, max_length=64)
