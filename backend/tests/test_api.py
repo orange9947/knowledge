@@ -151,6 +151,37 @@ def test_cards_and_graph_endpoints(client: TestClient):
     assert default_graph_response.json() == {"nodes": [], "edges": []}
 
 
+def test_run_detail_status_and_knowledge_search(client: TestClient):
+    base_response = client.post("/knowledge-bases", json={"name": "Search Base"})
+    knowledge_base_id = base_response.json()["id"]
+    run_response = client.post(
+        "/runs",
+        json={"keyword": "Graph RAG", "mode": "light", "knowledge_base_id": knowledge_base_id},
+    )
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+
+    detail_response = client.get(f"/runs/{run_id}")
+    status_response = client.get(f"/runs/{run_id}/status")
+    search_response = client.get(f"/knowledge/search?knowledge_base_id={knowledge_base_id}&q=Graph")
+
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["run"]["id"] == run_id
+    assert len(detail["cards"]) == 3
+    assert status_response.status_code == 200
+    assert status_response.json()["id"] == run_id
+    assert search_response.status_code == 200
+    nodes = search_response.json()
+    assert any(node["name"] == "Graph RAG" for node in nodes)
+
+    node_id = nodes[0]["id"]
+    node_response = client.get(f"/knowledge/nodes/{node_id}?knowledge_base_id={knowledge_base_id}")
+    wrong_base_response = client.get(f"/knowledge/nodes/{node_id}?knowledge_base_id=1")
+    assert node_response.status_code == 200
+    assert wrong_base_response.status_code == 404
+
+
 def test_knowledge_base_endpoints_create_default_and_custom_base(client: TestClient):
     list_response = client.get("/knowledge-bases")
     assert list_response.status_code == 200

@@ -47,8 +47,19 @@ export type LearningCard = {
   sort_order: number;
 };
 
+export type KnowledgeNode = {
+  id: number;
+  knowledge_base_id: number;
+  type: string;
+  name: string;
+  normalized_name: string;
+  summary: string | null;
+  aliases: string[];
+  tags: string[];
+};
+
 export type GraphData = {
-  nodes: Array<{ id: number; knowledge_base_id: number; type: string; name: string }>;
+  nodes: KnowledgeNode[];
   edges: Array<{
     id: number;
     knowledge_base_id: number;
@@ -74,6 +85,12 @@ export type KnowledgeExport = {
   cards: LearningCard[];
   nodes: GraphData["nodes"];
   edges: GraphData["edges"];
+};
+
+export type RunDetail = {
+  run: LearningRun;
+  sources: SourceRecord[];
+  cards: LearningCard[];
 };
 
 export type ModelSettings = {
@@ -184,6 +201,10 @@ export async function collectRun(runId: number): Promise<LearningRun> {
   });
 }
 
+export async function fetchRunDetail(runId: number): Promise<RunDetail> {
+  return request<RunDetail>(`/runs/${runId}`);
+}
+
 export async function fetchRunSources(runId: number): Promise<SourceRecord[]> {
   return request<SourceRecord[]>(`/runs/${runId}/sources`);
 }
@@ -194,6 +215,23 @@ export async function fetchRunCards(runId: number): Promise<LearningCard[]> {
 
 export async function fetchGraph(knowledgeBaseId?: number | null): Promise<GraphData> {
   return request<GraphData>(withKnowledgeBase("/knowledge/graph", knowledgeBaseId));
+}
+
+export async function fetchKnowledgeNode(nodeId: number, knowledgeBaseId?: number | null): Promise<KnowledgeNode> {
+  return request<KnowledgeNode>(withKnowledgeBase(`/knowledge/nodes/${nodeId}`, knowledgeBaseId));
+}
+
+export async function searchKnowledge(
+  query: string,
+  knowledgeBaseId?: number | null,
+  type?: string,
+): Promise<KnowledgeNode[]> {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (type) params.set("type", type);
+  let path = `/knowledge/search${params.size ? `?${params.toString()}` : ""}`;
+  path = withKnowledgeBase(path, knowledgeBaseId);
+  return request<KnowledgeNode[]>(path);
 }
 
 export async function exportKnowledge(knowledgeBaseId?: number | null): Promise<KnowledgeExport> {

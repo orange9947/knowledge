@@ -260,6 +260,27 @@ class KnowledgeRepository:
         self.session.refresh(edge)
         return edge
 
+    def get_node(self, node_id: int) -> models.KnowledgeNode | None:
+        return self.session.get(models.KnowledgeNode, node_id)
+
+    def search_nodes(
+        self,
+        query: str | None = None,
+        knowledge_base_id: int | None = None,
+        node_type: str | None = None,
+        limit: int = 50,
+    ) -> list[models.KnowledgeNode]:
+        statement = select(models.KnowledgeNode)
+        if knowledge_base_id is not None:
+            statement = statement.where(models.KnowledgeNode.knowledge_base_id == knowledge_base_id)
+        if node_type:
+            statement = statement.where(models.KnowledgeNode.type == node_type)
+        if query:
+            normalized_query = f"%{normalize_name(query)}%"
+            statement = statement.where(models.KnowledgeNode.normalized_name.like(normalized_query))
+        statement = statement.order_by(models.KnowledgeNode.updated_at.desc(), models.KnowledgeNode.id.asc()).limit(limit)
+        return list(self.session.scalars(statement))
+
     def list_graph(self, knowledge_base_id: int | None = None) -> tuple[list[models.KnowledgeNode], list[models.KnowledgeEdge]]:
         node_statement = select(models.KnowledgeNode)
         edge_statement = select(models.KnowledgeEdge)

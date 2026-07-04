@@ -25,8 +25,10 @@ import {
   exportKnowledge,
   fetchGraph,
   fetchHealth,
+  fetchKnowledgeNode,
   fetchKnowledgeBases,
   fetchModelSettings,
+  fetchRunDetail,
   fetchRunCards,
   fetchRunSources,
   fetchRuns,
@@ -38,6 +40,7 @@ import {
   type HealthResponse,
   type KnowledgeBase,
   type KnowledgeExport,
+  type KnowledgeNode,
   type LearningCard,
   type LearningRun,
   type ModelSettings,
@@ -155,12 +158,16 @@ function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [activeKnowledgeBaseId, setActiveKnowledgeBaseId] = useState<number | null>(null);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [runs, setRuns] = useState<LearningRun[]>([]);
   const [modelSettings, setModelSettings] = useState<ModelSettings | null>(null);
   const [sources, setSources] = useState<SourceSettings[]>([]);
   const [runSources, setRunSources] = useState<SourceRecord[]>([]);
   const [cards, setCards] = useState<LearningCard[]>([]);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
+  const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
+  const [selectedRun, setSelectedRun] = useState<LearningRun | null>(null);
   const [modelForm, setModelForm] = useState(emptyModelForm);
   const [message, setMessage] = useState<string>("Ready");
   const [busy, setBusy] = useState(false);
@@ -223,6 +230,8 @@ function App() {
         setGraph(graphData);
         setRunSources([]);
         setCards([]);
+        setSelectedNode(null);
+        setSelectedRun(null);
       } catch (error) {
         if (!mounted) return;
         setMessage(error instanceof Error ? error.message : "Failed to load knowledge base data");
@@ -251,6 +260,14 @@ function App() {
   }, [sources]);
 
   const healthLabel = health ? `API ${health.version}` : healthError ? "API offline" : "Checking";
+  const filteredRuns = useMemo(() => {
+    const keyword = historyFilter.trim().toLowerCase();
+    return runs.filter((run) => {
+      const matchesKeyword = !keyword || run.keyword.toLowerCase().includes(keyword);
+      const matchesStatus = statusFilter === "all" || run.status === statusFilter;
+      return matchesKeyword && matchesStatus;
+    });
+  }, [historyFilter, runs, statusFilter]);
 
   async function refreshActiveKnowledgeBase(knowledgeBaseId = activeKnowledgeBaseId) {
     if (!knowledgeBaseId) return;
@@ -337,6 +354,7 @@ function App() {
       setRunSources(collectedSources);
       setCards(generatedCards);
       setGraph(graphData);
+      setSelectedRun(collected);
       setMessage(`Run #${run.id} ${collected.status}; ${collectedSources.length} source records`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to create run");
@@ -384,6 +402,31 @@ function App() {
     } finally {
       event.target.value = "";
       setBusy(false);
+    }
+  }
+
+  async function handleSelectNode(nodeId: number) {
+    if (!activeKnowledgeBaseId) return;
+    setMessage("Loading node details...");
+    try {
+      const node = await fetchKnowledgeNode(nodeId, activeKnowledgeBaseId);
+      setSelectedNode(node);
+      setMessage(`Node selected: ${node.name}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load node details");
+    }
+  }
+
+  async function handleSelectRun(runId: number) {
+    setMessage("Loading run details...");
+    try {
+      const detail = await fetchRunDetail(runId);
+      setSelectedRun(detail.run);
+      setCards(detail.cards);
+      setRunSources(detail.sources);
+      setMessage(`Loaded run #${detail.run.id}: ${detail.run.keyword}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load run details");
     }
   }
 
@@ -471,13 +514,30 @@ function App() {
 
         {activeView === "graph" ? (
           <section className="single-view" aria-label="Knowledge graph workspace">
-            <GraphPanel graph={graph} knowledgeBaseName={activeKnowledgeBase?.name ?? "Current"} />
+            <GraphPanel
+              graph={graph}
+              knowledgeBaseName={activeKnowledgeBase?.name ?? "Current"}
+              onSelectNode={handleSelectNode}
+              selectedNode={selectedNode}
+            />
           </section>
         ) : null}
 
         {activeView === "history" ? (
           <section className="single-view" aria-label="History workspace">
-            <HistoryPanel busy={busy} onExport={handleExport} onImport={handleImport} runs={runs} />
+            <HistoryPanel
+              busy={busy}
+              filter={historyFilter}
+              onExport={handleExport}
+              onFilterChange={setHistoryFilter}
+              onImport={handleImport}
+              onSelectRun={handleSelectRun}
+              onStatusChange={setStatusFilter}
+              runSources={runSources}
+              runs={filteredRuns}
+              selectedRun={selectedRun}
+              statusFilter={statusFilter}
+            />
           </section>
         ) : null}
 
@@ -588,19 +648,31 @@ function CardsPanel({ cards }: { cards: LearningCard[] }) {
   );
 }
 
-function GraphPanel({ graph, knowledgeBaseName }: { graph: GraphData; knowledgeBaseName: string }) {
+function GraphPanel({
+  graph,
+  knowledgeBaseName,
+  onSelectNode,
+  selectedNode,
+}: {
+  graph: GraphData;
+  knowledgeBaseName: string;
+  onSelectNode: (nodeId: number) => void;
+  selectedNode: KnowledgeNode | null;
+}) {
   const sampleNodes = graph.nodes.slice(0, 4);
   const displayNodes =
     sampleNodes.length > 0
       ? sampleNodes.map((node, index) => ({
           className: ["node-keyword", "node-concept", "node-skill", "node-project"][index] ?? "node-concept",
+          id: node.id,
           label: node.name,
+          type: node.type,
         }))
       : [
-          { className: "node-keyword", label: knowledgeBaseName },
-          { className: "node-concept", label: "Foundation" },
-          { className: "node-skill", label: "Skills" },
-          { className: "node-project", label: "Projects" },
+          { className: "node-keyword", id: 0, label: knowledgeBaseName, type: "base" },
+          { className: "node-concept", id: 0, label: "Foundation", type: "concept" },
+          { className: "node-skill", id: 0, label: "Skills", type: "skill" },
+          { className: "node-project", id: 0, label: "Projects", type: "project" },
         ];
 
   return (
@@ -619,13 +691,35 @@ function GraphPanel({ graph, knowledgeBaseName }: { graph: GraphData; knowledgeB
       </div>
       <div className="graph-canvas" aria-label="Knowledge graph preview">
         {displayNodes.map((node) => (
-          <div className={`node ${node.className}`} key={`${node.className}-${node.label}`}>
+          <button
+            className={`node ${node.className} ${selectedNode?.id === node.id ? "selected" : ""}`}
+            disabled={node.id === 0}
+            key={`${node.className}-${node.label}`}
+            onClick={() => onSelectNode(node.id)}
+            type="button"
+          >
             {node.label}
-          </div>
+          </button>
         ))}
         <div className="edge edge-a" />
         <div className="edge edge-b" />
         <div className="edge edge-c" />
+      </div>
+      <div className="node-detail">
+        {selectedNode ? (
+          <>
+            <div>
+              <p className="eyebrow">{selectedNode.type}</p>
+              <h3>{selectedNode.name}</h3>
+            </div>
+            <p>{selectedNode.summary || "No summary yet."}</p>
+            <div className="tag-row">
+              {selectedNode.tags.length === 0 ? <span>No tags</span> : selectedNode.tags.map((tag) => <span key={tag}>{tag}</span>)}
+            </div>
+          </>
+        ) : (
+          <p className="empty-state compact">Select a graph node to inspect details.</p>
+        )}
       </div>
     </div>
   );
@@ -821,14 +915,28 @@ function KnowledgeBasePanel({
 
 function HistoryPanel({
   busy,
+  filter,
+  onFilterChange,
   runs,
   onExport,
   onImport,
+  onSelectRun,
+  onStatusChange,
+  runSources,
+  selectedRun,
+  statusFilter,
 }: {
   busy: boolean;
+  filter: string;
   runs: LearningRun[];
   onExport: () => void;
+  onFilterChange: (value: string) => void;
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
+  onSelectRun: (runId: number) => void;
+  onStatusChange: (value: string) => void;
+  runSources: SourceRecord[];
+  selectedRun: LearningRun | null;
+  statusFilter: string;
 }) {
   return (
     <div className="panel history-panel">
@@ -847,17 +955,66 @@ function HistoryPanel({
           </label>
         </div>
       </div>
+      <div className="history-filters">
+        <label>
+          <Search size={15} aria-hidden="true" />
+          <input
+            aria-label="Filter history"
+            value={filter}
+            onChange={(event) => onFilterChange(event.target.value)}
+            placeholder="Filter runs"
+          />
+        </label>
+        <select aria-label="Filter status" value={statusFilter} onChange={(event) => onStatusChange(event.target.value)}>
+          <option value="all">all</option>
+          <option value="completed">completed</option>
+          <option value="partial">partial</option>
+          <option value="failed">failed</option>
+          <option value="pending">pending</option>
+          <option value="running">running</option>
+        </select>
+      </div>
       <div className="run-list">
         {runs.length === 0 ? (
           <p className="empty-state">No runs yet.</p>
         ) : (
           runs.map((run) => (
-            <div className="run-row" key={run.id}>
+            <button className="run-row" key={run.id} onClick={() => onSelectRun(run.id)} type="button">
               <strong>{run.keyword}</strong>
               <span>{run.mode}</span>
               <span>{run.status}</span>
-            </div>
+            </button>
           ))
+        )}
+      </div>
+      <div className="history-detail">
+        {selectedRun ? (
+          <>
+            <div className="detail-grid">
+              <div>
+                <span>Selected</span>
+                <strong>{selectedRun.keyword}</strong>
+              </div>
+              <div>
+                <span>Sources</span>
+                <strong>{selectedRun.source_count}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>{selectedRun.status}</strong>
+              </div>
+            </div>
+            <div className="mini-source-list">
+              {runSources.slice(0, 5).map((source) => (
+                <a href={source.url} key={source.id} target="_blank" rel="noreferrer">
+                  <span className={`extract-status ${source.status}`}>{source.status}</span>
+                  <strong>{source.title || source.site || source.url}</strong>
+                </a>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="empty-state compact">Select a run to review its captured sources.</p>
         )}
       </div>
     </div>

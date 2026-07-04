@@ -53,6 +53,12 @@ class LearningRunRead(BaseModel):
     error_summary: str | None
 
 
+class RunDetailRead(BaseModel):
+    run: LearningRunRead
+    sources: list["SourceRead"]
+    cards: list["CardRead"]
+
+
 class ModelConfigWrite(BaseModel):
     name: str = Field(default="Default", min_length=1, max_length=120)
     base_url: str = Field(min_length=1)
