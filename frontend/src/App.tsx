@@ -103,17 +103,22 @@ const nodeTypeLabels: Record<string, string> = {
 const cardTypeLabels: Record<string, string> = {
   current_practice: "最新实践",
   foundation: "基础知识",
+  key_point: "核心知识点",
   learning_path: "学习路径",
+  practice_project: "实践项目",
   project_tool: "项目工具",
   recommended_reading: "推荐阅读",
   term: "术语",
+  usage_method: "使用方法",
 };
 
 const tagLabels: Record<string, string> = {
   foundation: "基础",
+  key_point: "知识点",
   keyword: "关键词",
   practice: "实践",
   source: "来源",
+  usage: "使用方法",
 };
 
 const sourceNameLabels: Record<string, string> = {
@@ -131,19 +136,19 @@ const baseNameLabels: Record<string, string> = {
 
 const learningCards = [
   {
-    type: "基础",
-    title: "核心概念",
-    body: "定义、术语、前置知识和最短学习路径会沉淀在当前知识库。",
+    type: "核心知识点",
+    title: "等待阅读分析",
+    body: "运行后，模型会阅读抓取到的文章正文，提炼真正有学习价值的知识点。",
   },
   {
-    type: "实践",
-    title: "最新项目与技能",
-    body: "开源项目、工具链、行业案例和实践技能会保留来源证据。",
+    type: "使用方法",
+    title: "方法与场景",
+    body: "分析结果会优先整理怎么用、适合什么场景、有哪些步骤和注意事项。",
   },
   {
-    type: "隔离",
-    title: "知识库边界",
-    body: "不同知识库不会自动互相关联，适合拆分行业、项目或学习方向。",
+    type: "学习路径",
+    title: "学习路线",
+    body: "系统会把知识点、使用方法和实践项目组织成可执行的学习路径。",
   },
 ];
 
@@ -504,7 +509,7 @@ function App() {
       setCards(generatedCards);
       setGraph(graphData);
       setSelectedRun(collected);
-      setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；共 ${collectedSources.length} 条来源记录`);
+      setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；已分析 ${collectedSources.length} 条素材来源`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "创建学习任务失败");
     } finally {
@@ -878,8 +883,8 @@ function CardsPanel({ cards }: { cards: LearningCard[] }) {
     <div className="panel cards-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">学习卡片</p>
-          <h2>学习卡片</h2>
+          <p className="eyebrow">阅读分析</p>
+          <h2>知识提炼</h2>
         </div>
         <Sparkles size={19} />
       </div>
@@ -1135,14 +1140,14 @@ function ExtractionPanel({
     <div className="panel extracted-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">正文抓取</p>
-          <h2>正文抓取</h2>
+          <p className="eyebrow">引用来源</p>
+          <h2>素材证据</h2>
         </div>
         <SlidersHorizontal size={19} />
       </div>
       <div className="extracted-list">
         {runSources.length === 0 ? (
-          <p className="empty-state">保存来源后运行关键词任务。</p>
+          <p className="empty-state">运行后会显示被模型阅读和引用的素材来源。</p>
         ) : (
           runSources.map((source) => (
             <article className="extracted-row" key={source.id}>
@@ -1441,7 +1446,7 @@ function HistoryPanel({
                 <strong>{selectedRun.keyword}</strong>
               </div>
               <div>
-                <span>来源数</span>
+                <span>素材数</span>
                 <strong>{selectedRun.source_count}</strong>
               </div>
               <div>

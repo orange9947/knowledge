@@ -176,7 +176,35 @@ def test_create_and_list_runs(client: TestClient):
     assert default_list_response.json() == []
 
 
-def test_collect_run_uses_seeded_default_sources(client: TestClient):
+def test_collect_run_uses_seeded_default_sources(client: TestClient, monkeypatch):
+    original_client = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "api.github.com/search/repositories" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "items": [
+                        {
+                            "full_name": "example/rag",
+                            "html_url": "https://github.com/example/rag",
+                            "description": "RAG repository",
+                        }
+                    ]
+                },
+            )
+        if "github.com/example/rag" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html><title>RAG repo</title><body><p>" + ("RAG content " * 80) + "</p></body></html>",
+            )
+        return httpx.Response(404, request=request)
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(transport=httpx.MockTransport(handler)))
     run_response = client.post("/runs", json={"keyword": "RAG", "mode": "light"})
     run_id = run_response.json()["id"]
 
@@ -184,13 +212,89 @@ def test_collect_run_uses_seeded_default_sources(client: TestClient):
 
     assert collect_response.status_code == 200
     payload = collect_response.json()
-    assert payload["status"] == "partial"
+    assert payload["status"] == "completed"
 
     sources_response = client.get(f"/runs/{run_id}/sources")
     assert sources_response.status_code == 200
     sources = sources_response.json()
     assert len(sources) > 0
-    assert any(source["site"] in {"github.com", "news.google.com"} for source in sources)
+    assert any(source["url"] == "https://github.com/example/rag" for source in sources)
+
+
+def test_collect_run_reads_article_candidates_not_search_pages(client: TestClient, monkeypatch):
+    original_client = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "api.github.com/search/repositories" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "items": [
+                        {
+                            "full_name": "example/rag-lab",
+                            "html_url": "https://github.com/example/rag-lab",
+                            "description": "RAG project",
+                        }
+                    ]
+                },
+            )
+        if "github.com/example/rag-lab" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html><title>RAG Lab</title><body><p>" + ("RAG article body " * 80) + "</p></body></html>",
+            )
+        if "juejin.cn/search" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text='<a href="https://juejin.cn/post/7440000000000000000">RAG 实践指南</a>',
+            )
+        if "juejin.cn/post/7440000000000000000" in url:
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html"},
+                text="<html><title>RAG 实践指南</title><body><p>" + ("RAG 中文正文 " * 80) + "</p></body></html>",
+            )
+        return httpx.Response(404, request=request)
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(transport=httpx.MockTransport(handler)))
+    client.put(
+        "/settings/sources",
+        json=[
+            {
+                "name": "GitHub 仓库",
+                "type": "builtin",
+                "enabled": True,
+                "url_or_domain": "github.com",
+                "language_hint": "en",
+            },
+            {
+                "name": "掘金搜索",
+                "type": "search_page",
+                "enabled": True,
+                "url_or_domain": "https://juejin.cn/search?query={keyword}&type=0",
+                "language_hint": "zh",
+            },
+        ],
+    )
+    run_response = client.post("/runs", json={"keyword": "RAG", "mode": "light"})
+    run_id = run_response.json()["id"]
+
+    collect_response = client.post(f"/runs/{run_id}/collect")
+
+    assert collect_response.status_code == 200
+    assert collect_response.json()["status"] == "completed"
+    sources = client.get(f"/runs/{run_id}/sources").json()
+    urls = [source["url"] for source in sources]
+    assert "https://github.com/example/rag-lab" in urls
+    assert "https://juejin.cn/post/7440000000000000000" in urls
+    assert all("/search" not in url for url in urls)
 
 
 def test_cards_and_graph_endpoints(client: TestClient):
@@ -208,7 +312,7 @@ def test_cards_and_graph_endpoints(client: TestClient):
     default_graph_response = client.get("/knowledge/graph")
 
     assert cards_response.status_code == 200
-    assert len(cards_response.json()) == 3
+    assert len(cards_response.json()) == 5
     assert graph_response.status_code == 200
     graph = graph_response.json()
     assert len(graph["nodes"]) >= 3
@@ -234,7 +338,7 @@ def test_run_detail_status_and_knowledge_search(client: TestClient):
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["run"]["id"] == run_id
-    assert len(detail["cards"]) == 3
+    assert len(detail["cards"]) == 5
     assert status_response.status_code == 200
     assert status_response.json()["id"] == run_id
     assert search_response.status_code == 200

@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -79,9 +80,9 @@ def discover_candidates(
         if config.type == "entry_url":
             candidates.extend(_entry_url_candidates(config))
         elif config.type == "domain":
-            candidates.extend(_domain_candidates(keyword, config))
+            candidates.extend(_domain_candidates(keyword, config, fetcher))
         elif config.type == "builtin":
-            candidates.extend(_builtin_candidates(keyword, config))
+            candidates.extend(_builtin_candidates(keyword, config, fetcher))
         elif config.type == "rss":
             candidates.extend(_rss_candidates(keyword, config, fetcher))
         elif config.type == "search_page":
@@ -166,37 +167,66 @@ def _entry_url_candidates(config: models.SourceConfig) -> list[SourceCandidate]:
     ]
 
 
-def _domain_candidates(keyword: str, config: models.SourceConfig) -> list[SourceCandidate]:
+def _domain_candidates(
+    keyword: str,
+    config: models.SourceConfig,
+    fetch_text: Callable[[str], str],
+) -> list[SourceCandidate]:
     if is_http_url(config.url_or_domain):
         return _entry_url_candidates(config)
     domain = _clean_domain(config.url_or_domain)
     if not domain:
         return []
-    return [
-        SourceCandidate(
-            url=_domain_search_url(domain, quote_plus(keyword)),
-            title=f"{config.name} 站内搜索",
-            site=domain,
-            language=config.language_hint,
-            snippet=f"来自已配置站点 {domain} 的搜索结果。",
-        )
-    ]
+    search_url = _domain_search_url(domain, quote_plus(keyword))
+    try:
+        html = fetch_text(search_url)
+    except httpx.HTTPError:
+        return []
+    return extract_search_result_links(html, search_url, keyword, config.language_hint)
 
 
-def _builtin_candidates(keyword: str, config: models.SourceConfig) -> list[SourceCandidate]:
+def _builtin_candidates(
+    keyword: str,
+    config: models.SourceConfig,
+    fetch_text: Callable[[str], str],
+) -> list[SourceCandidate]:
     marker = f"{config.name} {config.url_or_domain or ''}".lower()
     if "github" not in marker:
         return []
-    url = f"https://github.com/search?q={quote_plus(keyword)}&type=repositories"
-    return [
-        SourceCandidate(
-            url=url,
-            title=f"{keyword} 相关 GitHub 仓库",
-            site="github.com",
-            language=config.language_hint or "en",
-            snippet="来自内置 GitHub 来源的仓库搜索结果。",
+    api_url = f"https://api.github.com/search/repositories?q={quote_plus(keyword)}&per_page=10"
+    try:
+        payload = json.loads(fetch_text(api_url))
+    except (httpx.HTTPError, json.JSONDecodeError, TypeError):
+        return []
+    return _github_repository_candidates(payload, config.language_hint or "en")
+
+
+def _github_repository_candidates(payload: object, language_hint: str | None) -> list[SourceCandidate]:
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return []
+
+    candidates: list[SourceCandidate] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        html_url = item.get("html_url")
+        if not isinstance(html_url, str) or not is_http_url(html_url):
+            continue
+        full_name = item.get("full_name") if isinstance(item.get("full_name"), str) else None
+        description = item.get("description") if isinstance(item.get("description"), str) else None
+        candidates.append(
+            SourceCandidate(
+                url=html_url,
+                title=full_name or site_from_url(html_url),
+                site=site_from_url(html_url),
+                language=language_hint,
+                snippet=description,
+            )
         )
-    ]
+    return dedupe_candidates(candidates)
 
 
 def _rss_candidates(
@@ -222,21 +252,11 @@ def _search_page_candidates(
     if not config.enabled or not is_http_url(config.url_or_domain):
         return []
     url = _keyword_url(config.url_or_domain or "", keyword)
-    candidates = [
-        SourceCandidate(
-            url=url,
-            title=f"{keyword} 搜索页",
-            site=site_from_url(url),
-            language=config.language_hint,
-            snippet="来自自定义搜索页来源的候选结果。",
-        )
-    ]
     try:
         html = fetch_text(url)
     except httpx.HTTPError:
-        return candidates
-    parsed_links = extract_search_result_links(html, url, keyword, config.language_hint)
-    return parsed_links or candidates
+        return []
+    return extract_search_result_links(html, url, keyword, config.language_hint)
 
 
 def extract_search_result_links(
@@ -266,7 +286,7 @@ def extract_search_result_links(
                 title=text or site,
                 site=site,
                 language=language_hint,
-                snippet=f"来自 {site} 的搜索结果。",
+                snippet=f"从 {site} 发现的候选素材。",
             )
         )
     return dedupe_candidates(candidates)
@@ -370,15 +390,6 @@ def _looks_like_result_url(url: str) -> bool:
     if "hn.algolia.com" in host:
         return "story_" in query or "objectid" in query
     return True
-    return [
-        SourceCandidate(
-            url=url,
-            title=f"{keyword} 搜索页",
-            site=site_from_url(url),
-            language=config.language_hint,
-            snippet="来自自定义搜索页来源的候选结果。",
-        )
-    ]
 
 
 def _matches_keyword(keyword: str, *values: str | None) -> bool:
@@ -388,7 +399,7 @@ def _matches_keyword(keyword: str, *values: str | None) -> bool:
 def _candidate_rank(candidate: SourceCandidate) -> tuple[int, str]:
     url = candidate.url.lower()
     site = candidate.site or site_from_url(candidate.url) or ""
-    if "github.com/search" in url:
+    if "github.com" in site:
         return (0, url)
     if "news.google.com" in site:
         return (1, url)

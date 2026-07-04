@@ -87,11 +87,7 @@ class LearningRunService:
 
         for sort_order, card_payload in enumerate(output.cards):
             source_ids = _source_ids_from_indexes(sources, card_payload.source_indexes)
-            card_nodes = [
-                node.id
-                for node in node_by_name.values()
-                if node.name in {card_payload.title, card_payload.title.replace(" 基础知识", "")}
-            ]
+            card_nodes = _card_node_ids_for_payload(card_payload.title, node_by_name)
             self.repository.add_card(
                 CardCreate(
                     run_id=run_id,
@@ -128,3 +124,15 @@ def _source_ids_from_indexes(sources, indexes: list[int]) -> list[int]:
         if 0 <= index < len(sources):
             ids.append(sources[index].id)
     return ids
+
+
+def _card_node_ids_for_payload(card_title: str, node_by_name) -> list[int]:
+    normalized_title = card_title.strip()
+    node_ids: list[int] = []
+    for node in node_by_name.values():
+        if node.name == normalized_title:
+            node_ids.append(node.id)
+            continue
+        if normalized_title.startswith(node.name) or node.name.startswith(normalized_title):
+            node_ids.append(node.id)
+    return node_ids

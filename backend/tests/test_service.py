@@ -53,9 +53,15 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path):
         assert len(sources) == 1
         assert sources[0].status == "success"
         cards = repository.list_cards_for_run(run.id)
-        assert [card.type for card in cards] == ["foundation", "current_practice", "learning_path"]
+        assert [card.type for card in cards] == [
+            "key_point",
+            "usage_method",
+            "practice_project",
+            "learning_path",
+            "recommended_reading",
+        ]
         nodes, edges = repository.list_graph(knowledge_base.id)
-        assert len(nodes) >= 3
-        assert len(edges) >= 2
+        assert len(nodes) >= 4
+        assert len(edges) >= 3
     finally:
         session.close()

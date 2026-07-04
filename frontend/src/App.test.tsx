@@ -77,6 +77,8 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "AI 学习知识图谱" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "知识提炼" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "素材证据" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeInTheDocument();
     expect(await screen.findByText("API 0.1.0")).toBeInTheDocument();

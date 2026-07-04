@@ -8,7 +8,13 @@ from app.models import ModelConfig
 def test_fallback_output_generates_cards_nodes_and_edges():
     output = fallback_output("AI Agent", [])
 
-    assert [card.type for card in output.cards] == ["foundation", "current_practice", "learning_path"]
+    assert [card.type for card in output.cards] == [
+        "key_point",
+        "usage_method",
+        "practice_project",
+        "learning_path",
+        "recommended_reading",
+    ]
     assert any(node.type == "keyword" and node.name == "AI Agent" for node in output.nodes)
     assert any(edge.type == "contains" for edge in output.edges)
 

@@ -65,13 +65,31 @@ def test_discover_candidates_uses_configured_sources():
     </channel></rss>
     """
 
-    candidates = discover_candidates("AI Agent", configs, "light", fetch_text=lambda _: feed)
+    github_payload = """
+    {
+      "items": [
+        {
+          "full_name": "example/ai-agent",
+          "html_url": "https://github.com/example/ai-agent",
+          "description": "AI Agent repository"
+        }
+      ]
+    }
+    """
+
+    def fetch(url: str) -> str:
+        if "api.github.com" in url:
+            return github_payload
+        return feed
+
+    candidates = discover_candidates("AI Agent", configs, "light", fetch_text=fetch)
 
     assert [candidate.site for candidate in candidates] == [
         "github.com",
         "docs.example.com",
         "example.com",
     ]
+    assert candidates[0].url == "https://github.com/example/ai-agent"
 
 
 def test_discover_candidates_expands_keyword_templates_and_domains():
@@ -112,9 +130,31 @@ def test_discover_candidates_expands_keyword_templates_and_domains():
 
     candidates = discover_candidates("AI Agent", configs, "light", fetch_text=fetch)
 
-    assert "https://juejin.cn/search?query=AI+Agent&type=0" in [candidate.url for candidate in candidates]
+    assert "https://juejin.cn/search?query=AI+Agent&type=0" not in [candidate.url for candidate in candidates]
     assert "https://news.example.com/agent" in [candidate.url for candidate in candidates]
     assert "https://dev.to/example/ai-agent-guide" in [candidate.url for candidate in candidates]
+
+
+def test_search_page_returns_no_candidate_when_no_article_links():
+    configs = [
+        models.SourceConfig(
+            name="Search",
+            type="search_page",
+            enabled=True,
+            url_or_domain="https://search.example.com/?q={keyword}",
+            language_hint="en",
+        ),
+    ]
+    html = """
+    <html><body>
+      <a href="https://accounts.google.com/login">AI Agent login</a>
+      <a href="/about">About this search site</a>
+    </body></html>
+    """
+
+    candidates = discover_candidates("AI Agent", configs, "light", fetch_text=lambda _: html)
+
+    assert candidates == []
 
 
 def test_extract_search_result_links_filters_low_value_links():

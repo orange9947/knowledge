@@ -189,31 +189,46 @@ def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:
     source_summary = "、".join(source_titles) if source_titles else "当前来源"
     cards = [
         AICard(
-            type="foundation",
-            title=f"{keyword} 基础知识",
-            summary=f"围绕 {keyword} 建立基础概念、常见术语和学习边界。",
-            details=f"本地 fallback 根据已抓取材料生成，参考来源：{source_summary}。",
+            type="key_point",
+            title=f"{keyword} 核心知识点",
+            summary=f"围绕 {keyword} 提炼核心概念、关键结论和需要优先理解的问题。",
+            details=f"本地 fallback 只能根据已抓取素材做粗略归纳，建议配置模型获得更完整的阅读分析。参考素材：{source_summary}。",
             source_indexes=source_indexes[:3],
         ),
         AICard(
-            type="current_practice",
-            title=f"{keyword} 最新实践",
-            summary=f"关注 {keyword} 的项目、工具、工作流和落地技能。",
-            details="后续接入模型 API 后，这里会由模型基于正文提炼更细的实践项目和技能。",
+            type="usage_method",
+            title=f"{keyword} 使用方法",
+            summary=f"梳理 {keyword} 的适用场景、常见用法、工具链和落地步骤。",
+            details="配置模型后，这里会基于文章正文提炼具体方法、注意事项和可操作步骤。",
+            source_indexes=source_indexes[:5],
+        ),
+        AICard(
+            type="practice_project",
+            title=f"{keyword} 实践项目",
+            summary=f"从素材中归纳可练手的小项目、复现任务或验证方案。",
+            details="优先选择能在本地或小规模环境中完成的项目，用来验证概念和工具链。",
             source_indexes=source_indexes[:5],
         ),
         AICard(
             type="learning_path",
             title=f"{keyword} 学习路径",
-            summary="先理解核心概念，再阅读官方或项目材料，最后挑一个小项目复现。",
-            details="建议按：概念 -> 术语 -> 工具 -> 项目 -> 复盘笔记 的顺序学习。",
+            summary="先理解核心概念，再掌握使用方法，最后通过项目复现并整理复盘。",
+            details="建议按：核心概念 -> 关键术语 -> 使用方法 -> 实践项目 -> 复盘笔记 的顺序学习。",
+            source_indexes=source_indexes[:5],
+        ),
+        AICard(
+            type="recommended_reading",
+            title=f"{keyword} 推荐阅读",
+            summary="优先回看与知识点、方法步骤和实践项目直接相关的高价值素材。",
+            details=f"从当前已抓取素材中优先参考：{source_summary}。",
             source_indexes=source_indexes[:5],
         ),
     ]
     nodes = [
         AINode(type="keyword", name=keyword, summary=f"{keyword} 学习主题", tags=["keyword"]),
-        AINode(type="concept", name=f"{keyword} 基础概念", tags=["foundation"]),
-        AINode(type="skill", name=f"{keyword} 实践技能", tags=["practice"]),
+        AINode(type="concept", name=f"{keyword} 核心知识点", tags=["key_point"]),
+        AINode(type="skill", name=f"{keyword} 使用方法", tags=["usage"]),
+        AINode(type="project", name=f"{keyword} 实践项目", tags=["practice"]),
     ]
     for material in materials[:3]:
         source_node_name = _source_node_name(material)
@@ -226,8 +241,9 @@ def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:
             )
         )
     edges = [
-        AIEdge(source=keyword, target=f"{keyword} 基础概念", type="contains", confidence=0.72),
-        AIEdge(source=f"{keyword} 基础概念", target=f"{keyword} 实践技能", type="prerequisite", confidence=0.68),
+        AIEdge(source=keyword, target=f"{keyword} 核心知识点", type="contains", confidence=0.72),
+        AIEdge(source=f"{keyword} 核心知识点", target=f"{keyword} 使用方法", type="prerequisite", confidence=0.68),
+        AIEdge(source=f"{keyword} 使用方法", target=f"{keyword} 实践项目", type="applied_by", confidence=0.66),
     ]
     for material in materials[:3]:
         source_node_name = _source_node_name(material)
@@ -275,8 +291,12 @@ def _build_prompt(keyword: str, materials: list[Material]) -> str:
         )
     return (
         f"关键词：{keyword}\n"
-        "请基于以下来源生成中文学习内容。严格返回 JSON，结构为："
-        "{\"cards\":[{\"type\":\"foundation|term|learning_path|current_practice|project_tool|recommended_reading\","
+        "你是一个学习研究助手。请认真阅读下面的文章正文和摘要，比较不同来源，提炼真正有学习价值的信息。"
+        "不要把搜索结果网页列表当作答案，不要简单复述标题，不要保留广告、导航、重复内容或低质量材料。"
+        "请输出中文阅读分析，重点回答：核心知识点是什么、怎么使用、可以做什么项目、应该如何学习。"
+        "每张卡片都必须引用 source_indexes，表示支撑这条结论的来源编号。"
+        "严格返回 JSON，结构为："
+        "{\"cards\":[{\"type\":\"key_point|usage_method|practice_project|learning_path|recommended_reading\","
         "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
         "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|source\",\"name\":\"...\","
         "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
