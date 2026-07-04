@@ -121,6 +121,20 @@ class KnowledgeRepository:
         self.session.refresh(run)
         return run
 
+    def update_run_retention(self, run: models.LearningRun, is_pinned: bool) -> models.LearningRun:
+        run.is_pinned = is_pinned
+        self.session.commit()
+        self.session.refresh(run)
+        return run
+
+    def delete_run(self, run: models.LearningRun) -> None:
+        knowledge_base_id = run.knowledge_base_id
+        source_ids = [source.id for source in self.list_sources_for_run(run.id)]
+        self._remove_source_references(source_ids)
+        self.session.delete(run)
+        self.session.commit()
+        self.prune_orphan_graph(knowledge_base_id, remove_unanchored_edges=True)
+
     def get_model_config(self) -> models.ModelConfig | None:
         statement = select(models.ModelConfig).order_by(models.ModelConfig.id.asc())
         return self.session.scalar(statement)
@@ -214,6 +228,35 @@ class KnowledgeRepository:
         statement = select(models.Source).where(models.Source.run_id == run_id).order_by(models.Source.id.asc())
         return list(self.session.scalars(statement))
 
+    def get_source(self, source_id: int) -> models.Source | None:
+        return self.session.get(models.Source, source_id)
+
+    def update_source_retention(self, source: models.Source, is_pinned: bool) -> models.Source:
+        source.is_pinned = is_pinned
+        self.session.commit()
+        self.session.refresh(source)
+        return source
+
+    def clear_source_text(self, source: models.Source) -> models.Source:
+        source.extracted_text = None
+        source.content_hash = None
+        self.session.commit()
+        self.session.refresh(source)
+        return source
+
+    def delete_source(self, source: models.Source) -> int:
+        run_id = source.run_id
+        source_id = source.id
+        run = source.run
+        knowledge_base_id = run.knowledge_base_id if run else None
+        self._remove_source_references([source_id])
+        self.session.delete(source)
+        self.session.commit()
+        self._sync_source_count(run_id)
+        if knowledge_base_id is not None:
+            self.prune_orphan_graph(knowledge_base_id)
+        return run_id
+
     def add_card(self, payload: CardCreate) -> models.Card:
         card = models.Card(**payload.model_dump())
         self.session.add(card)
@@ -291,6 +334,50 @@ class KnowledgeRepository:
         edges = list(self.session.scalars(edge_statement.order_by(models.KnowledgeEdge.id.asc())))
         return nodes, edges
 
+    def prune_orphan_graph(self, knowledge_base_id: int, remove_unanchored_edges: bool = False) -> None:
+        source_ids = {
+            source_id
+            for (source_id,) in self.session.execute(
+                select(models.Source.id).join(models.LearningRun).where(models.LearningRun.knowledge_base_id == knowledge_base_id)
+            )
+        }
+        card_node_ids = self._card_node_ids(knowledge_base_id)
+
+        for edge in list(
+            self.session.scalars(
+                select(models.KnowledgeEdge).where(models.KnowledgeEdge.knowledge_base_id == knowledge_base_id)
+            )
+        ):
+            evidence_ids = [source_id for source_id in edge.evidence_source_ids or [] if source_id in source_ids]
+            edge.evidence_source_ids = evidence_ids
+            if edge.type == "supported_by_source" and not evidence_ids:
+                self.session.delete(edge)
+            elif (
+                remove_unanchored_edges
+                and not evidence_ids
+                and edge.source_node_id not in card_node_ids
+                and edge.target_node_id not in card_node_ids
+            ):
+                self.session.delete(edge)
+
+        self.session.flush()
+        referenced_node_ids = self._card_node_ids(knowledge_base_id)
+        for edge in self.session.scalars(
+            select(models.KnowledgeEdge).where(models.KnowledgeEdge.knowledge_base_id == knowledge_base_id)
+        ):
+            referenced_node_ids.add(edge.source_node_id)
+            referenced_node_ids.add(edge.target_node_id)
+
+        for node in list(
+            self.session.scalars(
+                select(models.KnowledgeNode).where(models.KnowledgeNode.knowledge_base_id == knowledge_base_id)
+            )
+        ):
+            if node.id in referenced_node_ids:
+                continue
+            self.session.delete(node)
+        self.session.commit()
+
     def list_all_sources(self, knowledge_base_id: int | None = None) -> list[models.Source]:
         statement = select(models.Source).join(models.LearningRun)
         if knowledge_base_id is not None:
@@ -309,6 +396,27 @@ class KnowledgeRepository:
             return
         run.source_count = len(run.sources)
         self.session.commit()
+
+    def _card_node_ids(self, knowledge_base_id: int) -> set[int]:
+        node_ids: set[int] = set()
+        statement = select(models.Card.node_ids).join(models.LearningRun).where(
+            models.LearningRun.knowledge_base_id == knowledge_base_id
+        )
+        for (card_node_ids,) in self.session.execute(statement):
+            node_ids.update(card_node_ids or [])
+        return node_ids
+
+    def _remove_source_references(self, source_ids: Iterable[int]) -> None:
+        deleted_ids = set(source_ids)
+        if not deleted_ids:
+            return
+        for card in self.session.scalars(select(models.Card)):
+            card.source_ids = [existing_id for existing_id in card.source_ids or [] if existing_id not in deleted_ids]
+        for edge in self.session.scalars(select(models.KnowledgeEdge)):
+            edge.evidence_source_ids = [
+                existing_id for existing_id in edge.evidence_source_ids or [] if existing_id not in deleted_ids
+            ]
+        self.session.flush()
 
 
 def mask_secret(value: str) -> str:

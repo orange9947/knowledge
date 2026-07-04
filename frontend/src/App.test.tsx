@@ -84,6 +84,7 @@ describe("App", () => {
 
   it("switches sidebar buttons to matching workspace panels", async () => {
     const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/health")) {
@@ -165,6 +166,7 @@ describe("App", () => {
               source_count: 1,
               token_usage_estimate: null,
               error_summary: null,
+              is_pinned: false,
             },
             sources: [
               {
@@ -181,6 +183,7 @@ describe("App", () => {
                 extracted_text: "RAG material",
                 content_hash: "hash",
                 quality_score: 1,
+                is_pinned: false,
               },
             ],
             cards: [],
@@ -212,6 +215,70 @@ describe("App", () => {
           ],
         });
       }
+      if (url.endsWith("/runs/7/retention") && init?.method === "PATCH") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 7,
+            knowledge_base_id: 1,
+            keyword: "RAG",
+            mode: "light",
+            status: "partial",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: null,
+            language_policy: "zh-en-to-zh",
+            source_count: 1,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: true,
+          }),
+        });
+      }
+      if (url.endsWith("/sources/1/retention") && init?.method === "PATCH") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 1,
+            run_id: 7,
+            url: "https://github.com/search?q=RAG",
+            title: "RAG repositories",
+            site: "github.com",
+            language: "en",
+            published_at: null,
+            status: "success",
+            status_reason: null,
+            snippet: null,
+            extracted_text: "RAG material",
+            content_hash: "hash",
+            quality_score: 1,
+            is_pinned: true,
+          }),
+        });
+      }
+      if (url.endsWith("/sources/1/clear-text") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 1,
+            run_id: 7,
+            url: "https://github.com/search?q=RAG",
+            title: "RAG repositories",
+            site: "github.com",
+            language: "en",
+            published_at: null,
+            status: "success",
+            status_reason: null,
+            snippet: null,
+            extracted_text: null,
+            content_hash: null,
+            quality_score: 1,
+            is_pinned: true,
+          }),
+        });
+      }
+      if (url.endsWith("/sources/1") && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
+      }
       if (url.includes("/runs")) {
         return Promise.resolve({
           ok: true,
@@ -228,6 +295,7 @@ describe("App", () => {
               source_count: 1,
               token_usage_estimate: null,
               error_summary: null,
+              is_pinned: false,
             },
           ],
         });
@@ -250,6 +318,14 @@ describe("App", () => {
     await user.type(screen.getByRole("textbox", { name: "Filter history" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
     expect(await screen.findByText("RAG repositories")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Pin run 7" }));
+    expect(await screen.findByText("Pinned run #7")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Pin source 1" }));
+    expect(await screen.findByText("Pinned source #1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear text 1" }));
+    expect(await screen.findByText("Cleared extracted text for source #1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete source 1" }));
+    expect(await screen.findByText("Deleted source #1")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
@@ -274,6 +350,18 @@ describe("App", () => {
           url_or_domain: "https://example.com/feed.xml",
         }),
       ]),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/runs/7/retention",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sources/1/clear-text",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sources/1",
+      expect.objectContaining({ method: "DELETE" }),
     );
   });
 });

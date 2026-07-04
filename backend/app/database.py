@@ -67,6 +67,10 @@ def _migrate_knowledge_base_columns(target_engine: Engine) -> None:
             columns = {column["name"] for column in inspector.get_columns(table_name)}
             if "knowledge_base_id" not in columns:
                 connection.execute(text(f"alter table {table_name} add column knowledge_base_id integer"))
+        for table_name in ("learning_runs", "sources"):
+            columns = {column["name"] for column in inspector.get_columns(table_name)}
+            if "is_pinned" not in columns:
+                connection.execute(text(f"alter table {table_name} add column is_pinned boolean default 0 not null"))
 
 
 def get_session() -> Generator[Session, None, None]:

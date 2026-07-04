@@ -9,6 +9,8 @@ import {
   History,
   KeyRound,
   Library,
+  Pin,
+  PinOff,
   Play,
   Save,
   Search,
@@ -20,9 +22,12 @@ import {
 } from "lucide-react";
 
 import {
+  clearSourceText,
   collectRun,
   createKnowledgeBase,
   createRun,
+  deleteRun,
+  deleteSource,
   exportKnowledge,
   fetchGraph,
   fetchHealth,
@@ -37,6 +42,8 @@ import {
   importKnowledge,
   saveModelSettings,
   saveSourceSettings,
+  updateRunRetention,
+  updateSourceRetention,
   type GraphData,
   type HealthResponse,
   type KnowledgeBase,
@@ -466,6 +473,88 @@ function App() {
     }
   }
 
+  async function handleToggleRunRetention(run: LearningRun) {
+    setBusy(true);
+    try {
+      const updated = await updateRunRetention(run.id, !run.is_pinned);
+      setRuns((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      if (selectedRun?.id === updated.id) setSelectedRun(updated);
+      setMessage(updated.is_pinned ? `Pinned run #${updated.id}` : `Unpinned run #${updated.id}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to update run retention");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteRun(run: LearningRun) {
+    if (!window.confirm(`Delete run "${run.keyword}" and its captured content?`)) return;
+    setBusy(true);
+    try {
+      await deleteRun(run.id);
+      setRuns((current) => current.filter((item) => item.id !== run.id));
+      if (selectedRun?.id === run.id) {
+        setSelectedRun(null);
+        setCards([]);
+        setRunSources([]);
+      }
+      await refreshActiveKnowledgeBase();
+      setMessage(`Deleted run #${run.id}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to delete run");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleToggleSourceRetention(source: SourceRecord) {
+    setBusy(true);
+    try {
+      const updated = await updateSourceRetention(source.id, !source.is_pinned);
+      setRunSources((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setMessage(updated.is_pinned ? `Pinned source #${updated.id}` : `Unpinned source #${updated.id}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to update source retention");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClearSourceText(source: SourceRecord) {
+    if (!window.confirm(`Clear extracted text for "${source.title || source.site || source.url}"?`)) return;
+    setBusy(true);
+    try {
+      const updated = await clearSourceText(source.id);
+      setRunSources((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setMessage(`Cleared extracted text for source #${updated.id}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to clear source text");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteSource(source: SourceRecord) {
+    if (!window.confirm(`Delete source "${source.title || source.site || source.url}" from this run?`)) return;
+    setBusy(true);
+    try {
+      await deleteSource(source.id);
+      setRunSources((current) => current.filter((item) => item.id !== source.id));
+      if (selectedRun) {
+        const detail = await fetchRunDetail(selectedRun.id);
+        setSelectedRun(detail.run);
+        setCards(detail.cards);
+        setRunSources(detail.sources);
+      }
+      await refreshActiveKnowledgeBase();
+      setMessage(`Deleted source #${source.id}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to delete source");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
@@ -537,7 +626,13 @@ function App() {
             />
             <section className="dashboard-grid learn-grid">
               <CardsPanel cards={cards} />
-              <ExtractionPanel runSources={runSources} />
+              <ExtractionPanel
+                busy={busy}
+                onClearText={handleClearSourceText}
+                onDeleteSource={handleDeleteSource}
+                onToggleRetention={handleToggleSourceRetention}
+                runSources={runSources}
+              />
               <SourcesPanel
                 busy={busy}
                 onSaveDefaultSources={handleSaveDefaultSources}
@@ -561,15 +656,20 @@ function App() {
 
         {activeView === "history" ? (
           <section className="single-view" aria-label="History workspace">
-            <HistoryPanel
-              busy={busy}
-              filter={historyFilter}
-              onExport={handleExport}
-              onFilterChange={setHistoryFilter}
-              onImport={handleImport}
-              onSelectRun={handleSelectRun}
-              onStatusChange={setStatusFilter}
-              runSources={runSources}
+              <HistoryPanel
+                busy={busy}
+                filter={historyFilter}
+                onClearText={handleClearSourceText}
+                onExport={handleExport}
+                onFilterChange={setHistoryFilter}
+                onImport={handleImport}
+                onDeleteRun={handleDeleteRun}
+                onDeleteSource={handleDeleteSource}
+                onSelectRun={handleSelectRun}
+                onStatusChange={setStatusFilter}
+                onToggleSourceRetention={handleToggleSourceRetention}
+                onToggleRunRetention={handleToggleRunRetention}
+                runSources={runSources}
               runs={filteredRuns}
               selectedRun={selectedRun}
               statusFilter={statusFilter}
@@ -908,7 +1008,19 @@ function SourcesPanel({
   );
 }
 
-function ExtractionPanel({ runSources }: { runSources: SourceRecord[] }) {
+function ExtractionPanel({
+  busy,
+  onClearText,
+  onDeleteSource,
+  onToggleRetention,
+  runSources,
+}: {
+  busy: boolean;
+  onClearText: (source: SourceRecord) => void;
+  onDeleteSource: (source: SourceRecord) => void;
+  onToggleRetention: (source: SourceRecord) => void;
+  runSources: SourceRecord[];
+}) {
   return (
     <div className="panel extracted-panel">
       <div className="panel-heading">
@@ -931,6 +1043,38 @@ function ExtractionPanel({ runSources }: { runSources: SourceRecord[] }) {
                 </a>
               </div>
               <span className={`extract-status ${source.status}`}>{source.status}</span>
+              <div className="row-actions">
+                <button
+                  aria-label={source.is_pinned ? `Unpin source ${source.id}` : `Pin source ${source.id}`}
+                  className="icon-action"
+                  disabled={busy}
+                  onClick={() => onToggleRetention(source)}
+                  title={source.is_pinned ? "Unpin source" : "Pin source"}
+                  type="button"
+                >
+                  {source.is_pinned ? <PinOff size={15} /> : <Pin size={15} />}
+                </button>
+                <button
+                  aria-label={`Clear text ${source.id}`}
+                  className="icon-action"
+                  disabled={busy || !source.extracted_text}
+                  onClick={() => onClearText(source)}
+                  title="Clear extracted text"
+                  type="button"
+                >
+                  <SlidersHorizontal size={15} />
+                </button>
+                <button
+                  aria-label={`Delete source ${source.id}`}
+                  className="icon-action danger"
+                  disabled={busy}
+                  onClick={() => onDeleteSource(source)}
+                  title="Delete source"
+                  type="button"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </article>
           ))
         )}
@@ -1053,12 +1197,17 @@ function KnowledgeBasePanel({
 function HistoryPanel({
   busy,
   filter,
+  onClearText,
+  onDeleteRun,
   onFilterChange,
   runs,
   onExport,
   onImport,
+  onDeleteSource,
   onSelectRun,
   onStatusChange,
+  onToggleSourceRetention,
+  onToggleRunRetention,
   runSources,
   selectedRun,
   statusFilter,
@@ -1066,11 +1215,16 @@ function HistoryPanel({
   busy: boolean;
   filter: string;
   runs: LearningRun[];
+  onClearText: (source: SourceRecord) => void;
+  onDeleteRun: (run: LearningRun) => void;
   onExport: () => void;
   onFilterChange: (value: string) => void;
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
+  onDeleteSource: (source: SourceRecord) => void;
   onSelectRun: (runId: number) => void;
   onStatusChange: (value: string) => void;
+  onToggleSourceRetention: (source: SourceRecord) => void;
+  onToggleRunRetention: (run: LearningRun) => void;
   runSources: SourceRecord[];
   selectedRun: LearningRun | null;
   statusFilter: string;
@@ -1116,11 +1270,35 @@ function HistoryPanel({
           <p className="empty-state">No runs yet.</p>
         ) : (
           runs.map((run) => (
-            <button className="run-row" key={run.id} onClick={() => onSelectRun(run.id)} type="button">
-              <strong>{run.keyword}</strong>
-              <span>{run.mode}</span>
-              <span>{run.status}</span>
-            </button>
+            <div className="run-row" key={run.id}>
+              <button className="run-select" onClick={() => onSelectRun(run.id)} type="button">
+                <strong>{run.keyword}</strong>
+                <span>{run.mode}</span>
+                <span>{run.status}</span>
+              </button>
+              <div className="row-actions">
+                <button
+                  aria-label={run.is_pinned ? `Unpin run ${run.id}` : `Pin run ${run.id}`}
+                  className="icon-action"
+                  disabled={busy}
+                  onClick={() => onToggleRunRetention(run)}
+                  title={run.is_pinned ? "Unpin run" : "Pin run"}
+                  type="button"
+                >
+                  {run.is_pinned ? <PinOff size={15} /> : <Pin size={15} />}
+                </button>
+                <button
+                  aria-label={`Delete run ${run.id}`}
+                  className="icon-action danger"
+                  disabled={busy}
+                  onClick={() => onDeleteRun(run)}
+                  title="Delete run"
+                  type="button"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
           ))
         )}
       </div>
@@ -1143,10 +1321,44 @@ function HistoryPanel({
             </div>
             <div className="mini-source-list">
               {runSources.slice(0, 5).map((source) => (
-                <a href={source.url} key={source.id} target="_blank" rel="noreferrer">
-                  <span className={`extract-status ${source.status}`}>{source.status}</span>
-                  <strong>{source.title || source.site || source.url}</strong>
-                </a>
+                <div className="mini-source-row" key={source.id}>
+                  <a href={source.url} target="_blank" rel="noreferrer">
+                    <span className={`extract-status ${source.status}`}>{source.status}</span>
+                    <strong>{source.title || source.site || source.url}</strong>
+                  </a>
+                  <div className="row-actions">
+                    <button
+                      aria-label={source.is_pinned ? `Unpin source ${source.id}` : `Pin source ${source.id}`}
+                      className="icon-action"
+                      disabled={busy}
+                      onClick={() => onToggleSourceRetention(source)}
+                      title={source.is_pinned ? "Unpin source" : "Pin source"}
+                      type="button"
+                    >
+                      {source.is_pinned ? <PinOff size={15} /> : <Pin size={15} />}
+                    </button>
+                    <button
+                      aria-label={`Clear text ${source.id}`}
+                      className="icon-action"
+                      disabled={busy || !source.extracted_text}
+                      onClick={() => onClearText(source)}
+                      title="Clear extracted text"
+                      type="button"
+                    >
+                      <SlidersHorizontal size={15} />
+                    </button>
+                    <button
+                      aria-label={`Delete source ${source.id}`}
+                      className="icon-action danger"
+                      disabled={busy}
+                      onClick={() => onDeleteSource(source)}
+                      title="Delete source"
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </>

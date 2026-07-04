@@ -690,10 +690,29 @@ h3 {
   background: var(--paper);
 }
 
+.icon-action.danger {
+  color: #9f2f21;
+  border-color: rgba(159, 47, 33, 0.26);
+  background: #fff6f3;
+}
+
 .panel-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.row-actions {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px !important;
+}
+
+.row-actions .icon-action {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
 }
 
 .file-action {
@@ -760,14 +779,12 @@ h3 {
 .run-row {
   min-height: 44px;
   width: 100%;
-  border: 0;
   border-bottom: 1px solid var(--line);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 82px 92px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   color: var(--ink);
-  text-align: left;
   background: transparent;
 }
 
@@ -779,14 +796,27 @@ h3 {
   background: rgba(26, 143, 114, 0.06);
 }
 
-.run-row strong {
+.run-select {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px 92px;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-align: left;
+  background: transparent;
+}
+
+.run-select strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.run-row span {
+.run-select span {
   color: var(--muted);
   font-size: 0.88rem;
   text-align: right;
@@ -868,6 +898,15 @@ h3 {
   display: grid;
 }
 
+.mini-source-row {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+
 .mini-source-list a {
   min-height: 40px;
   display: grid;
@@ -876,7 +915,6 @@ h3 {
   gap: 10px;
   color: var(--ink);
   text-decoration: none;
-  border-top: 1px solid var(--line);
 }
 
 .mini-source-list strong {
@@ -946,7 +984,7 @@ h3 {
   min-height: 66px;
   padding: 10px 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--line);

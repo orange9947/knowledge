@@ -21,6 +21,7 @@ from app.schemas import (
     LearningRunRead,
     ModelConfigRead,
     ModelConfigWrite,
+    RetentionUpdate,
     RunDetailRead,
     SourceConfigRead,
     SourceConfigWrite,
@@ -139,6 +140,29 @@ def get_run_status(run_id: int, session: Session = Depends(get_session)):
     return run
 
 
+@app.patch("/runs/{run_id}/retention", response_model=LearningRunRead)
+def update_run_retention(
+    run_id: int,
+    payload: RetentionUpdate,
+    session: Session = Depends(get_session),
+):
+    repository = KnowledgeRepository(session)
+    run = repository.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return repository.update_run_retention(run, payload.is_pinned)
+
+
+@app.delete("/runs/{run_id}", status_code=204)
+def delete_run(run_id: int, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    run = repository.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    repository.delete_run(run)
+    return None
+
+
 @app.post("/runs/{run_id}/collect", response_model=LearningRunRead)
 def collect_run_sources(run_id: int, session: Session = Depends(get_session)):
     run = LearningRunService(session).collect_sources(run_id)
@@ -153,6 +177,38 @@ def list_run_sources(run_id: int, session: Session = Depends(get_session)):
     if repository.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return repository.list_sources_for_run(run_id)
+
+
+@app.patch("/sources/{source_id}/retention", response_model=SourceRead)
+def update_source_retention(
+    source_id: int,
+    payload: RetentionUpdate,
+    session: Session = Depends(get_session),
+):
+    repository = KnowledgeRepository(session)
+    source = repository.get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return repository.update_source_retention(source, payload.is_pinned)
+
+
+@app.post("/sources/{source_id}/clear-text", response_model=SourceRead)
+def clear_source_text(source_id: int, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    source = repository.get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return repository.clear_source_text(source)
+
+
+@app.delete("/sources/{source_id}", status_code=204)
+def delete_source(source_id: int, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    source = repository.get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    repository.delete_source(source)
+    return None
 
 
 @app.post("/runs/{run_id}/generate", response_model=LearningRunRead)

@@ -47,6 +47,7 @@ class LearningRun(Base):
     model_provider_config_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_usage_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_pinned: Mapped[bool] = mapped_column(default=False)
 
     knowledge_base: Mapped[KnowledgeBase] = relationship(back_populates="runs")
     sources: Mapped[list["Source"]] = relationship(
@@ -75,6 +76,7 @@ class Source(Base):
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_pinned: Mapped[bool] = mapped_column(default=False)
 
     run: Mapped[LearningRun] = relationship(back_populates="sources")
 

@@ -52,6 +52,7 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
             completed_at=run.completed_at,
             error_summary=run.error_summary,
         )
+        repository.update_run_retention(created, run.is_pinned)
         run_id_map[run.id] = created.id
 
     for source in sorted(payload.sources, key=lambda item: item.id):
@@ -73,6 +74,7 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
                 quality_score=source.quality_score,
             )
         )
+        repository.update_source_retention(created, source.is_pinned)
         source_id_map[source.id] = created.id
 
     for node in sorted(payload.nodes, key=lambda item: item.id):

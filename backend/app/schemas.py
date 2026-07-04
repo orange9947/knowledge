@@ -51,6 +51,7 @@ class LearningRunRead(BaseModel):
     source_count: int
     token_usage_estimate: int | None
     error_summary: str | None
+    is_pinned: bool = False
 
 
 class RunDetailRead(BaseModel):
@@ -136,6 +137,11 @@ class SourceRead(BaseModel):
     extracted_text: str | None
     content_hash: str | None
     quality_score: float | None
+    is_pinned: bool = False
+
+
+class RetentionUpdate(BaseModel):
+    is_pinned: bool
 
 
 class CardCreate(BaseModel):

@@ -17,6 +17,7 @@ export type LearningRun = {
   source_count: number;
   token_usage_estimate: number | null;
   error_summary: string | null;
+  is_pinned: boolean;
 };
 
 export type SourceRecord = {
@@ -33,6 +34,7 @@ export type SourceRecord = {
   extracted_text: string | null;
   content_hash: string | null;
   quality_score: number | null;
+  is_pinned: boolean;
 };
 
 export type LearningCard = {
@@ -138,6 +140,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
@@ -205,8 +210,40 @@ export async function fetchRunDetail(runId: number): Promise<RunDetail> {
   return request<RunDetail>(`/runs/${runId}`);
 }
 
+export async function updateRunRetention(runId: number, isPinned: boolean): Promise<LearningRun> {
+  return request<LearningRun>(`/runs/${runId}/retention`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_pinned: isPinned }),
+  });
+}
+
+export async function deleteRun(runId: number): Promise<void> {
+  return request<void>(`/runs/${runId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchRunSources(runId: number): Promise<SourceRecord[]> {
   return request<SourceRecord[]>(`/runs/${runId}/sources`);
+}
+
+export async function updateSourceRetention(sourceId: number, isPinned: boolean): Promise<SourceRecord> {
+  return request<SourceRecord>(`/sources/${sourceId}/retention`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_pinned: isPinned }),
+  });
+}
+
+export async function clearSourceText(sourceId: number): Promise<SourceRecord> {
+  return request<SourceRecord>(`/sources/${sourceId}/clear-text`, {
+    method: "POST",
+  });
+}
+
+export async function deleteSource(sourceId: number): Promise<void> {
+  return request<void>(`/sources/${sourceId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function fetchRunCards(runId: number): Promise<LearningCard[]> {

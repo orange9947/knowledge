@@ -11,6 +11,7 @@ This repository contains a runnable local Web MVP:
 - Knowledge bases, so runs and graph nodes are scoped instead of globally merged.
 - Default learning sources seeded on first startup: GitHub, Juejin, Dev.to, Stack Overflow, Hacker News, and Google News RSS.
 - Custom source settings for built-in sources, RSS feeds, domains, entry URLs, and search pages.
+- Retention controls for pinning or deleting runs, deleting individual sources, and clearing extracted text.
 - OpenAI-compatible model settings for OpenAI, DeepSeek, or compatible gateways.
 - JSON import/export without raw API keys.
 - Local fallback card and graph generation when no model API key is configured.
@@ -52,6 +53,7 @@ The frontend runs on `http://localhost:5173` and proxies API calls to `http://lo
 5. Review learning cards, captured sources, graph nodes, and history.
 
 The first run works without saving source settings because the backend seeds default sources. Settings can add, edit, disable, reset, or save custom RSS feeds, domains, entry URLs, and search pages.
+History can pin or delete a complete run. Captured sources can be pinned, deleted, or stripped of extracted page text while keeping title, URL, snippet, and status metadata.
 
 ## Source Behavior
 
@@ -63,8 +65,13 @@ The crawler is best-effort. Some sites block scraping or require JavaScript; tho
 - `POST /runs/{run_id}/collect`
 - `GET /runs/{run_id}`
 - `GET /runs/{run_id}/status`
+- `PATCH /runs/{run_id}/retention`
+- `DELETE /runs/{run_id}`
 - `GET /runs/{run_id}/sources`
 - `GET /runs/{run_id}/cards`
+- `PATCH /sources/{source_id}/retention`
+- `POST /sources/{source_id}/clear-text`
+- `DELETE /sources/{source_id}`
 - `GET /knowledge-bases`
 - `POST /knowledge-bases`
 - `GET /knowledge/graph`

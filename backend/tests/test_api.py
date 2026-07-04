@@ -182,6 +182,41 @@ def test_run_detail_status_and_knowledge_search(client: TestClient):
     assert wrong_base_response.status_code == 404
 
 
+def test_run_and_source_retention_delete_and_clear_text(client: TestClient):
+    run_response = client.post("/runs", json={"keyword": "Retention", "mode": "light"})
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+
+    detail_response = client.get(f"/runs/{run_id}")
+    source_id = detail_response.json()["sources"][0]["id"] if detail_response.json()["sources"] else None
+    if source_id is None:
+        client.post(f"/runs/{run_id}/collect")
+        detail_response = client.get(f"/runs/{run_id}")
+        source_id = detail_response.json()["sources"][0]["id"]
+
+    pin_run_response = client.patch(f"/runs/{run_id}/retention", json={"is_pinned": True})
+    pin_source_response = client.patch(f"/sources/{source_id}/retention", json={"is_pinned": True})
+    clear_response = client.post(f"/sources/{source_id}/clear-text")
+
+    assert pin_run_response.status_code == 200
+    assert pin_run_response.json()["is_pinned"] is True
+    assert pin_source_response.status_code == 200
+    assert pin_source_response.json()["is_pinned"] is True
+    assert clear_response.status_code == 200
+    assert clear_response.json()["extracted_text"] is None
+    assert clear_response.json()["url"]
+
+    delete_source_response = client.delete(f"/sources/{source_id}")
+    assert delete_source_response.status_code == 204
+    detail_after_source_delete = client.get(f"/runs/{run_id}").json()
+    assert all(source["id"] != source_id for source in detail_after_source_delete["sources"])
+    assert all(source_id not in card["source_ids"] for card in detail_after_source_delete["cards"])
+
+    delete_run_response = client.delete(f"/runs/{run_id}")
+    assert delete_run_response.status_code == 204
+    assert client.get(f"/runs/{run_id}").status_code == 404
+
+
 def test_knowledge_base_endpoints_create_default_and_custom_base(client: TestClient):
     list_response = client.get("/knowledge-bases")
     assert list_response.status_code == 200
