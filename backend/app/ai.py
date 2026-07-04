@@ -100,7 +100,46 @@ class AIOrchestrator:
             response.raise_for_status()
             data = response.json()
         content = data["choices"][0]["message"]["content"]
-        return AIOutput.model_validate(json.loads(_strip_code_fence(content)))
+        try:
+            return _parse_ai_output(content)
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError):
+            return self._repair_provider_output(content, model_config, api_key)
+
+    def _repair_provider_output(
+        self,
+        content: str,
+        model_config: models.ModelConfig,
+        api_key: str,
+    ) -> AIOutput:
+        payload = {
+            "model": model_config.model,
+            "temperature": 0,
+            "max_tokens": model_config.max_tokens,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Repair malformed model output into strict JSON only. Do not add explanations.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Return valid JSON with keys cards, nodes, edges. Preserve the user's content where possible.\n\n"
+                        f"{content}"
+                    ),
+                },
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{model_config.base_url.rstrip('/')}/chat/completions"
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        repaired_content = data["choices"][0]["message"]["content"]
+        return _parse_ai_output(repaired_content)
 
 
 def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:
@@ -216,3 +255,7 @@ def _strip_code_fence(content: str) -> str:
             lines = lines[:-1]
         return "\n".join(lines).strip()
     return stripped
+
+
+def _parse_ai_output(content: str) -> AIOutput:
+    return AIOutput.model_validate(json.loads(_strip_code_fence(content)))
