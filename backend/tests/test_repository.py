@@ -3,7 +3,14 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import init_db
 from app.repositories import KnowledgeRepository, normalize_name
-from app.schemas import CardCreate, KnowledgeEdgeCreate, KnowledgeNodeCreate, LearningRunCreate, SourceCreate
+from app.schemas import (
+    CardCreate,
+    KnowledgeBaseCreate,
+    KnowledgeEdgeCreate,
+    KnowledgeNodeCreate,
+    LearningRunCreate,
+    SourceCreate,
+)
 
 
 def build_test_repository(tmp_path):
@@ -25,6 +32,7 @@ def test_repository_persists_run_source_card_and_graph(tmp_path):
     repository, session = build_test_repository(tmp_path)
     try:
         run = repository.create_run(LearningRunCreate(keyword="AI Agent"))
+        knowledge_base_id = run.knowledge_base_id
         source = repository.add_source(
             SourceCreate(
                 run_id=run.id,
@@ -36,6 +44,7 @@ def test_repository_persists_run_source_card_and_graph(tmp_path):
         )
         concept = repository.upsert_node(
             KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base_id,
                 type="concept",
                 name="AI Agent",
                 summary="Autonomous AI workflow concept.",
@@ -44,10 +53,16 @@ def test_repository_persists_run_source_card_and_graph(tmp_path):
             )
         )
         skill = repository.upsert_node(
-            KnowledgeNodeCreate(type="skill", name="Tool calling", tags=["practice"])
+            KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base_id,
+                type="skill",
+                name="Tool calling",
+                tags=["practice"],
+            )
         )
         edge = repository.add_edge(
             KnowledgeEdgeCreate(
+                knowledge_base_id=knowledge_base_id,
                 source_node_id=concept.id,
                 target_node_id=skill.id,
                 type="contains",
@@ -79,8 +94,10 @@ def test_repository_persists_run_source_card_and_graph(tmp_path):
 def test_upsert_node_merges_aliases_and_tags(tmp_path):
     repository, session = build_test_repository(tmp_path)
     try:
+        knowledge_base = repository.ensure_default_knowledge_base()
         first = repository.upsert_node(
             KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base.id,
                 type="concept",
                 name="RAG",
                 aliases=["Retrieval Augmented Generation"],
@@ -89,6 +106,7 @@ def test_upsert_node_merges_aliases_and_tags(tmp_path):
         )
         second = repository.upsert_node(
             KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base.id,
                 type="concept",
                 name=" rag ",
                 aliases=["retrieval augmented generation", "检索增强生成"],
@@ -99,5 +117,31 @@ def test_upsert_node_merges_aliases_and_tags(tmp_path):
         assert first.id == second.id
         assert second.aliases == ["Retrieval Augmented Generation", "检索增强生成"]
         assert second.tags == ["llm", "search"]
+    finally:
+        session.close()
+
+
+def test_nodes_are_deduplicated_inside_each_knowledge_base(tmp_path):
+    repository, session = build_test_repository(tmp_path)
+    try:
+        default_base = repository.ensure_default_knowledge_base()
+        separate_base = repository.create_knowledge_base(KnowledgeBaseCreate(name="Computer Vision"))
+
+        default_node = repository.upsert_node(
+            KnowledgeNodeCreate(knowledge_base_id=default_base.id, type="concept", name="RAG")
+        )
+        repeated_default_node = repository.upsert_node(
+            KnowledgeNodeCreate(knowledge_base_id=default_base.id, type="concept", name=" rag ")
+        )
+        separate_node = repository.upsert_node(
+            KnowledgeNodeCreate(knowledge_base_id=separate_base.id, type="concept", name="RAG")
+        )
+
+        assert default_node.id == repeated_default_node.id
+        assert separate_node.id != default_node.id
+        default_nodes, _ = repository.list_graph(default_base.id)
+        separate_nodes, _ = repository.list_graph(separate_base.id)
+        assert [node.id for node in default_nodes] == [default_node.id]
+        assert [node.id for node in separate_nodes] == [separate_node.id]
     finally:
         session.close()

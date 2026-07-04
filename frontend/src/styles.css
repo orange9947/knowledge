@@ -115,6 +115,36 @@ button {
   margin-bottom: 24px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.knowledge-select {
+  min-height: 38px;
+  max-width: min(360px, 100%);
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.knowledge-select select {
+  min-width: 128px;
+  max-width: 220px;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--green-dark);
@@ -190,6 +220,14 @@ h3 {
 
 .run-copy {
   min-width: 170px;
+}
+
+.run-copy small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .run-controls {
@@ -270,6 +308,31 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
   gap: 18px;
+}
+
+.view-stack {
+  margin-top: 18px;
+}
+
+.single-view {
+  margin-top: 22px;
+}
+
+.single-view .graph-panel,
+.single-view .history-panel {
+  min-height: 620px;
+}
+
+.single-view .graph-canvas {
+  height: 520px;
+}
+
+.learn-grid .cards-panel {
+  grid-row: span 2;
+}
+
+.settings-grid {
+  align-items: start;
 }
 
 .panel {
@@ -576,6 +639,7 @@ h3 {
 }
 
 .settings-form input:focus,
+.knowledge-select:focus-within,
 .keyword-field:focus-within {
   border-color: rgba(26, 143, 114, 0.42);
   box-shadow: 0 0 0 3px rgba(26, 143, 114, 0.1);
@@ -618,6 +682,44 @@ h3 {
   color: var(--muted);
   font-size: 0.88rem;
   text-align: right;
+}
+
+.knowledge-list {
+  padding: 0 16px 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.knowledge-row {
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fbfcfb;
+}
+
+.knowledge-row:hover,
+.knowledge-row.selected {
+  border-color: rgba(26, 143, 114, 0.38);
+  background: rgba(26, 143, 114, 0.08);
+}
+
+.knowledge-row strong,
+.knowledge-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-row span {
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .empty-state {
@@ -733,6 +835,20 @@ h3 {
 
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .knowledge-select,
+  .knowledge-select select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .single-view .graph-canvas {
+    height: 420px;
   }
 
   .history-panel {

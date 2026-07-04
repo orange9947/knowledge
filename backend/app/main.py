@@ -13,6 +13,8 @@ from app.schemas import (
     CardRead,
     GraphRead,
     HealthResponse,
+    KnowledgeBaseCreate,
+    KnowledgeBaseRead,
     KnowledgeExport,
     LearningRunCreate,
     LearningRunRead,
@@ -80,17 +82,38 @@ def put_source_settings(
     return KnowledgeRepository(session).replace_source_configs(payload)
 
 
+@app.get("/knowledge-bases", response_model=list[KnowledgeBaseRead])
+def list_knowledge_bases(session: Session = Depends(get_session)):
+    return KnowledgeRepository(session).list_knowledge_bases()
+
+
+@app.post("/knowledge-bases", response_model=KnowledgeBaseRead, status_code=201)
+def create_knowledge_base(
+    payload: KnowledgeBaseCreate,
+    session: Session = Depends(get_session),
+):
+    return KnowledgeRepository(session).create_knowledge_base(payload)
+
+
 @app.post("/runs", response_model=LearningRunRead, status_code=201)
 def create_run(
     payload: LearningRunCreate,
     session: Session = Depends(get_session),
 ):
-    return KnowledgeRepository(session).create_run(payload)
+    repository = KnowledgeRepository(session)
+    knowledge_base_id = repository.resolve_knowledge_base_id(payload.knowledge_base_id)
+    if repository.get_knowledge_base(knowledge_base_id) is None:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    return repository.create_run(payload)
 
 
 @app.get("/runs", response_model=list[LearningRunRead])
-def list_runs(session: Session = Depends(get_session)):
-    return KnowledgeRepository(session).list_runs()
+def list_runs(knowledge_base_id: int | None = None, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    resolved_id = repository.resolve_knowledge_base_id(knowledge_base_id)
+    if repository.get_knowledge_base(resolved_id) is None:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    return repository.list_runs(resolved_id)
 
 
 @app.post("/runs/{run_id}/collect", response_model=LearningRunRead)
@@ -126,14 +149,21 @@ def list_run_cards(run_id: int, session: Session = Depends(get_session)):
 
 
 @app.get("/knowledge/graph", response_model=GraphRead)
-def get_knowledge_graph(session: Session = Depends(get_session)):
-    nodes, edges = KnowledgeRepository(session).list_graph()
+def get_knowledge_graph(knowledge_base_id: int | None = None, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    resolved_id = repository.resolve_knowledge_base_id(knowledge_base_id)
+    if repository.get_knowledge_base(resolved_id) is None:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    nodes, edges = repository.list_graph(resolved_id)
     return GraphRead(nodes=nodes, edges=edges)
 
 
 @app.get("/export", response_model=KnowledgeExport)
-def export_data(session: Session = Depends(get_session)):
-    return export_knowledge(KnowledgeRepository(session))
+def export_data(knowledge_base_id: int | None = None, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    if knowledge_base_id is not None and repository.get_knowledge_base(knowledge_base_id) is None:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    return export_knowledge(repository, knowledge_base_id=knowledge_base_id)
 
 
 @app.post("/import", response_model=KnowledgeExport)

@@ -67,14 +67,15 @@ class LearningRunService:
         sources = self.repository.list_sources_for_run(run_id)
         model_config = self.repository.get_model_config()
         output = self.ai_orchestrator.generate(run.keyword, sources, model_config)
-        self._persist_ai_output(run.id, sources, output)
+        self._persist_ai_output(run.id, run.knowledge_base_id, sources, output)
         return run
 
-    def _persist_ai_output(self, run_id: int, sources, output: AIOutput) -> None:
+    def _persist_ai_output(self, run_id: int, knowledge_base_id: int, sources, output: AIOutput) -> None:
         node_by_name = {}
         for node_payload in output.nodes:
             node = self.repository.upsert_node(
                 KnowledgeNodeCreate(
+                    knowledge_base_id=knowledge_base_id,
                     type=node_payload.type,
                     name=node_payload.name,
                     summary=node_payload.summary,
@@ -111,6 +112,7 @@ class LearningRunService:
                 continue
             self.repository.add_edge(
                 KnowledgeEdgeCreate(
+                    knowledge_base_id=knowledge_base_id,
                     source_node_id=source_node.id,
                     target_node_id=target_node.id,
                     type=edge_payload.type,

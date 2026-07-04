@@ -9,6 +9,7 @@ from app import models
 from app.schemas import (
     CardCreate,
     KnowledgeEdgeCreate,
+    KnowledgeBaseCreate,
     KnowledgeNodeCreate,
     LearningRunCreate,
     ModelConfigWrite,
@@ -19,6 +20,7 @@ from app.secrets import SecretStore
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+DEFAULT_KNOWLEDGE_BASE_NAME = "Default"
 
 
 def normalize_name(value: str) -> str:
@@ -44,8 +46,51 @@ class KnowledgeRepository:
         self.session = session
         self.secret_store = secret_store or SecretStore()
 
+    def ensure_default_knowledge_base(self) -> models.KnowledgeBase:
+        statement = select(models.KnowledgeBase).where(models.KnowledgeBase.name == DEFAULT_KNOWLEDGE_BASE_NAME)
+        knowledge_base = self.session.scalar(statement)
+        if knowledge_base is None:
+            knowledge_base = models.KnowledgeBase(
+                name=DEFAULT_KNOWLEDGE_BASE_NAME,
+                description="Default knowledge base for existing and uncategorized learning runs.",
+            )
+            self.session.add(knowledge_base)
+            self.session.commit()
+            self.session.refresh(knowledge_base)
+        return knowledge_base
+
+    def create_knowledge_base(self, payload: KnowledgeBaseCreate) -> models.KnowledgeBase:
+        name = payload.name.strip()
+        statement = select(models.KnowledgeBase).where(models.KnowledgeBase.name == name)
+        existing = self.session.scalar(statement)
+        if existing is not None:
+            return existing
+        knowledge_base = models.KnowledgeBase(name=name, description=payload.description)
+        self.session.add(knowledge_base)
+        self.session.commit()
+        self.session.refresh(knowledge_base)
+        return knowledge_base
+
+    def get_knowledge_base(self, knowledge_base_id: int) -> models.KnowledgeBase | None:
+        return self.session.get(models.KnowledgeBase, knowledge_base_id)
+
+    def list_knowledge_bases(self) -> list[models.KnowledgeBase]:
+        self.ensure_default_knowledge_base()
+        statement = select(models.KnowledgeBase).order_by(models.KnowledgeBase.created_at.asc(), models.KnowledgeBase.id.asc())
+        return list(self.session.scalars(statement))
+
+    def resolve_knowledge_base_id(self, knowledge_base_id: int | None = None) -> int:
+        if knowledge_base_id is not None:
+            return knowledge_base_id
+        return self.ensure_default_knowledge_base().id
+
     def create_run(self, payload: LearningRunCreate) -> models.LearningRun:
-        run = models.LearningRun(keyword=payload.keyword.strip(), mode=payload.mode)
+        knowledge_base_id = self.resolve_knowledge_base_id(payload.knowledge_base_id)
+        run = models.LearningRun(
+            keyword=payload.keyword.strip(),
+            mode=payload.mode,
+            knowledge_base_id=knowledge_base_id,
+        )
         self.session.add(run)
         self.session.commit()
         self.session.refresh(run)
@@ -54,8 +99,11 @@ class KnowledgeRepository:
     def get_run(self, run_id: int) -> models.LearningRun | None:
         return self.session.get(models.LearningRun, run_id)
 
-    def list_runs(self) -> list[models.LearningRun]:
-        statement = select(models.LearningRun).order_by(models.LearningRun.created_at.desc())
+    def list_runs(self, knowledge_base_id: int | None = None) -> list[models.LearningRun]:
+        statement = select(models.LearningRun)
+        if knowledge_base_id is not None:
+            statement = statement.where(models.LearningRun.knowledge_base_id == knowledge_base_id)
+        statement = statement.order_by(models.LearningRun.created_at.desc())
         return list(self.session.scalars(statement))
 
     def update_run_status(
@@ -173,12 +221,14 @@ class KnowledgeRepository:
     def upsert_node(self, payload: KnowledgeNodeCreate) -> models.KnowledgeNode:
         normalized_name = normalize_name(payload.name)
         statement = select(models.KnowledgeNode).where(
+            models.KnowledgeNode.knowledge_base_id == payload.knowledge_base_id,
             models.KnowledgeNode.type == payload.type,
             models.KnowledgeNode.normalized_name == normalized_name,
         )
         node = self.session.scalar(statement)
         if node is None:
             node = models.KnowledgeNode(
+                knowledge_base_id=payload.knowledge_base_id,
                 type=payload.type,
                 name=payload.name.strip(),
                 normalized_name=normalized_name,
@@ -203,16 +253,27 @@ class KnowledgeRepository:
         self.session.refresh(edge)
         return edge
 
-    def list_graph(self) -> tuple[list[models.KnowledgeNode], list[models.KnowledgeEdge]]:
-        nodes = list(self.session.scalars(select(models.KnowledgeNode).order_by(models.KnowledgeNode.id.asc())))
-        edges = list(self.session.scalars(select(models.KnowledgeEdge).order_by(models.KnowledgeEdge.id.asc())))
+    def list_graph(self, knowledge_base_id: int | None = None) -> tuple[list[models.KnowledgeNode], list[models.KnowledgeEdge]]:
+        node_statement = select(models.KnowledgeNode)
+        edge_statement = select(models.KnowledgeEdge)
+        if knowledge_base_id is not None:
+            node_statement = node_statement.where(models.KnowledgeNode.knowledge_base_id == knowledge_base_id)
+            edge_statement = edge_statement.where(models.KnowledgeEdge.knowledge_base_id == knowledge_base_id)
+        nodes = list(self.session.scalars(node_statement.order_by(models.KnowledgeNode.id.asc())))
+        edges = list(self.session.scalars(edge_statement.order_by(models.KnowledgeEdge.id.asc())))
         return nodes, edges
 
-    def list_all_sources(self) -> list[models.Source]:
-        return list(self.session.scalars(select(models.Source).order_by(models.Source.id.asc())))
+    def list_all_sources(self, knowledge_base_id: int | None = None) -> list[models.Source]:
+        statement = select(models.Source).join(models.LearningRun)
+        if knowledge_base_id is not None:
+            statement = statement.where(models.LearningRun.knowledge_base_id == knowledge_base_id)
+        return list(self.session.scalars(statement.order_by(models.Source.id.asc())))
 
-    def list_all_cards(self) -> list[models.Card]:
-        return list(self.session.scalars(select(models.Card).order_by(models.Card.id.asc())))
+    def list_all_cards(self, knowledge_base_id: int | None = None) -> list[models.Card]:
+        statement = select(models.Card).join(models.LearningRun)
+        if knowledge_base_id is not None:
+            statement = statement.where(models.LearningRun.knowledge_base_id == knowledge_base_id)
+        return list(self.session.scalars(statement.order_by(models.Card.id.asc())))
 
     def _sync_source_count(self, run_id: int) -> None:
         run = self.session.get(models.LearningRun, run_id)

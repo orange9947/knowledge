@@ -16,15 +16,32 @@ class HealthResponse(BaseModel):
     database: Literal["ready"]
 
 
+class KnowledgeBaseCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    description: str | None = None
+
+
+class KnowledgeBaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class LearningRunCreate(BaseModel):
     keyword: str = Field(min_length=1, max_length=240)
     mode: RunMode = "light"
+    knowledge_base_id: int | None = None
 
 
 class LearningRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    knowledge_base_id: int = 1
     keyword: str
     mode: str
     status: str
@@ -141,6 +158,7 @@ class CardRead(BaseModel):
 
 
 class KnowledgeNodeCreate(BaseModel):
+    knowledge_base_id: int
     type: str
     name: str
     summary: str | None = None
@@ -149,6 +167,7 @@ class KnowledgeNodeCreate(BaseModel):
 
 
 class KnowledgeEdgeCreate(BaseModel):
+    knowledge_base_id: int
     source_node_id: int
     target_node_id: int
     type: str
@@ -160,6 +179,7 @@ class KnowledgeNodeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    knowledge_base_id: int = 1
     type: str
     name: str
     normalized_name: str
@@ -172,6 +192,7 @@ class KnowledgeEdgeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    knowledge_base_id: int = 1
     source_node_id: int
     target_node_id: int
     type: str
@@ -186,6 +207,7 @@ class GraphRead(BaseModel):
 
 class KnowledgeExport(BaseModel):
     version: int = 1
+    knowledge_bases: list[KnowledgeBaseRead] = Field(default_factory=list)
     runs: list[LearningRunRead]
     sources: list[SourceRead]
     cards: list[CardRead]

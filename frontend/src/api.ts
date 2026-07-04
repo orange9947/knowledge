@@ -7,6 +7,7 @@ export type HealthResponse = {
 
 export type LearningRun = {
   id: number;
+  knowledge_base_id: number;
   keyword: string;
   mode: "light" | "standard" | "deep" | string;
   status: string;
@@ -47,12 +48,27 @@ export type LearningCard = {
 };
 
 export type GraphData = {
-  nodes: Array<{ id: number; type: string; name: string }>;
-  edges: Array<{ id: number; type: string; source_node_id: number; target_node_id: number }>;
+  nodes: Array<{ id: number; knowledge_base_id: number; type: string; name: string }>;
+  edges: Array<{
+    id: number;
+    knowledge_base_id: number;
+    type: string;
+    source_node_id: number;
+    target_node_id: number;
+  }>;
+};
+
+export type KnowledgeBase = {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type KnowledgeExport = {
   version: number;
+  knowledge_bases: KnowledgeBase[];
   runs: LearningRun[];
   sources: SourceRecord[];
   cards: LearningCard[];
@@ -108,6 +124,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function withKnowledgeBase(path: string, knowledgeBaseId?: number | null): string {
+  if (!knowledgeBaseId) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}knowledge_base_id=${knowledgeBaseId}`;
+}
+
 export async function fetchHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
 }
@@ -134,15 +156,26 @@ export async function saveSourceSettings(payload: SourceSettingsInput[]): Promis
   });
 }
 
-export async function createRun(keyword: string, mode: string): Promise<LearningRun> {
-  return request<LearningRun>("/runs", {
+export async function fetchKnowledgeBases(): Promise<KnowledgeBase[]> {
+  return request<KnowledgeBase[]>("/knowledge-bases");
+}
+
+export async function createKnowledgeBase(name: string, description?: string): Promise<KnowledgeBase> {
+  return request<KnowledgeBase>("/knowledge-bases", {
     method: "POST",
-    body: JSON.stringify({ keyword, mode }),
+    body: JSON.stringify({ name, description: description || null }),
   });
 }
 
-export async function fetchRuns(): Promise<LearningRun[]> {
-  return request<LearningRun[]>("/runs");
+export async function createRun(keyword: string, mode: string, knowledgeBaseId: number): Promise<LearningRun> {
+  return request<LearningRun>("/runs", {
+    method: "POST",
+    body: JSON.stringify({ keyword, mode, knowledge_base_id: knowledgeBaseId }),
+  });
+}
+
+export async function fetchRuns(knowledgeBaseId?: number | null): Promise<LearningRun[]> {
+  return request<LearningRun[]>(withKnowledgeBase("/runs", knowledgeBaseId));
 }
 
 export async function collectRun(runId: number): Promise<LearningRun> {
@@ -159,12 +192,12 @@ export async function fetchRunCards(runId: number): Promise<LearningCard[]> {
   return request<LearningCard[]>(`/runs/${runId}/cards`);
 }
 
-export async function fetchGraph(): Promise<GraphData> {
-  return request<GraphData>("/knowledge/graph");
+export async function fetchGraph(knowledgeBaseId?: number | null): Promise<GraphData> {
+  return request<GraphData>(withKnowledgeBase("/knowledge/graph", knowledgeBaseId));
 }
 
-export async function exportKnowledge(): Promise<KnowledgeExport> {
-  return request<KnowledgeExport>("/export");
+export async function exportKnowledge(knowledgeBaseId?: number | null): Promise<KnowledgeExport> {
+  return request<KnowledgeExport>(withKnowledgeBase("/export", knowledgeBaseId));
 }
 
 export async function importKnowledge(payload: KnowledgeExport): Promise<KnowledgeExport> {

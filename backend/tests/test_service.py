@@ -32,6 +32,7 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path):
     session = Session()
     try:
         repository = KnowledgeRepository(session)
+        knowledge_base = repository.ensure_default_knowledge_base()
         repository.replace_source_configs(
             [
                 SourceConfigWrite(
@@ -53,7 +54,7 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path):
         assert sources[0].status == "success"
         cards = repository.list_cards_for_run(run.id)
         assert [card.type for card in cards] == ["foundation", "current_practice", "learning_path"]
-        nodes, edges = repository.list_graph()
+        nodes, edges = repository.list_graph(knowledge_base.id)
         assert len(nodes) >= 3
         assert len(edges) >= 2
     finally:

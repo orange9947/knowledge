@@ -1,25 +1,51 @@
 from app.repositories import KnowledgeRepository
-from app.schemas import CardCreate, KnowledgeEdgeCreate, KnowledgeExport, KnowledgeNodeCreate, LearningRunCreate, SourceCreate
+from app.schemas import (
+    CardCreate,
+    KnowledgeBaseCreate,
+    KnowledgeEdgeCreate,
+    KnowledgeExport,
+    KnowledgeNodeCreate,
+    LearningRunCreate,
+    SourceCreate,
+)
 
 
-def export_knowledge(repository: KnowledgeRepository) -> KnowledgeExport:
-    nodes, edges = repository.list_graph()
+def export_knowledge(repository: KnowledgeRepository, knowledge_base_id: int | None = None) -> KnowledgeExport:
+    nodes, edges = repository.list_graph(knowledge_base_id)
+    knowledge_bases = repository.list_knowledge_bases()
+    if knowledge_base_id is not None:
+        knowledge_bases = [item for item in knowledge_bases if item.id == knowledge_base_id]
     return KnowledgeExport(
-        runs=repository.list_runs(),
-        sources=repository.list_all_sources(),
-        cards=repository.list_all_cards(),
+        knowledge_bases=knowledge_bases,
+        runs=repository.list_runs(knowledge_base_id),
+        sources=repository.list_all_sources(knowledge_base_id),
+        cards=repository.list_all_cards(knowledge_base_id),
         nodes=nodes,
         edges=edges,
     )
 
 
 def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) -> KnowledgeExport:
+    default_base = repository.ensure_default_knowledge_base()
+    knowledge_base_id_map: dict[int, int] = {}
     run_id_map: dict[int, int] = {}
     source_id_map: dict[int, int] = {}
     node_id_map: dict[int, int] = {}
 
+    for knowledge_base in sorted(payload.knowledge_bases, key=lambda item: item.id):
+        created = repository.create_knowledge_base(
+            KnowledgeBaseCreate(name=knowledge_base.name, description=knowledge_base.description)
+        )
+        knowledge_base_id_map[knowledge_base.id] = created.id
+
     for run in sorted(payload.runs, key=lambda item: item.id):
-        created = repository.create_run(LearningRunCreate(keyword=run.keyword, mode=_mode(run.mode)))
+        created = repository.create_run(
+            LearningRunCreate(
+                keyword=run.keyword,
+                mode=_mode(run.mode),
+                knowledge_base_id=knowledge_base_id_map.get(run.knowledge_base_id, default_base.id),
+            )
+        )
         repository.update_run_status(
             created,
             run.status,
@@ -52,6 +78,7 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
     for node in sorted(payload.nodes, key=lambda item: item.id):
         created = repository.upsert_node(
             KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base_id_map.get(node.knowledge_base_id, default_base.id),
                 type=node.type,
                 name=node.name,
                 summary=node.summary,
@@ -85,6 +112,7 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
             continue
         repository.add_edge(
             KnowledgeEdgeCreate(
+                knowledge_base_id=knowledge_base_id_map.get(edge.knowledge_base_id, default_base.id),
                 source_node_id=source_node_id,
                 target_node_id=target_node_id,
                 type=edge.type,
