@@ -323,6 +323,13 @@ h3 {
   line-height: 1.62;
 }
 
+.learning-card small {
+  display: block;
+  margin-top: 10px;
+  color: #4c5a54;
+  line-height: 1.45;
+}
+
 .graph-panel {
   min-height: 432px;
 }

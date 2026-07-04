@@ -9,6 +9,8 @@ from app.config import get_settings
 from app.database import get_session, init_db
 from app.repositories import KnowledgeRepository
 from app.schemas import (
+    CardRead,
+    GraphRead,
     HealthResponse,
     LearningRunCreate,
     LearningRunRead,
@@ -103,3 +105,25 @@ def list_run_sources(run_id: int, session: Session = Depends(get_session)):
     if repository.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return repository.list_sources_for_run(run_id)
+
+
+@app.post("/runs/{run_id}/generate", response_model=LearningRunRead)
+def generate_run_output(run_id: int, session: Session = Depends(get_session)):
+    run = LearningRunService(session).generate_learning_output(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
+@app.get("/runs/{run_id}/cards", response_model=list[CardRead])
+def list_run_cards(run_id: int, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    if repository.get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return repository.list_cards_for_run(run_id)
+
+
+@app.get("/knowledge/graph", response_model=GraphRead)
+def get_knowledge_graph(session: Session = Depends(get_session)):
+    nodes, edges = KnowledgeRepository(session).list_graph()
+    return GraphRead(nodes=nodes, edges=edges)

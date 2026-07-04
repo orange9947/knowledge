@@ -34,12 +34,25 @@ export type SourceRecord = {
   quality_score: number | null;
 };
 
+export type LearningCard = {
+  id: number;
+  run_id: number;
+  type: string;
+  title: string;
+  summary: string;
+  details: string | null;
+  source_ids: number[];
+  node_ids: number[];
+  sort_order: number;
+};
+
 export type ModelSettings = {
   id: number;
   name: string;
   base_url: string;
   model: string;
   api_key_reference: string | null;
+  api_key_mask: string | null;
   default_temperature: number;
   max_tokens: number;
 };
@@ -126,4 +139,8 @@ export async function collectRun(runId: number): Promise<LearningRun> {
 
 export async function fetchRunSources(runId: number): Promise<SourceRecord[]> {
   return request<SourceRecord[]>(`/runs/${runId}/sources`);
+}
+
+export async function fetchRunCards(runId: number): Promise<LearningCard[]> {
+  return request<LearningCard[]>(`/runs/${runId}/cards`);
 }

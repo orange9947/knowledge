@@ -10,7 +10,8 @@ from app.main import app
 
 
 @pytest.fixture()
-def client(tmp_path) -> Generator[TestClient, None, None]:
+def client(tmp_path, monkeypatch) -> Generator[TestClient, None, None]:
+    monkeypatch.setenv("AILKG_SECRET_FILE", str(tmp_path / "secrets.json"))
     engine = create_engine(
         f"sqlite:///{tmp_path / 'api.db'}",
         connect_args={"check_same_thread": False},
@@ -47,7 +48,8 @@ def test_model_settings_mask_api_key(client: TestClient):
     assert response.status_code == 200
     payload = response.json()
     assert payload["name"] == "DeepSeek"
-    assert payload["api_key_reference"] == "sk-1...cdef"
+    assert payload["api_key_reference"] == "model:deepseek:api_key"
+    assert payload["api_key_mask"] == "sk-1...cdef"
     assert "1234567890" not in str(payload)
 
 
@@ -107,3 +109,19 @@ def test_collect_run_without_sources_marks_partial(client: TestClient):
     sources_response = client.get(f"/runs/{run_id}/sources")
     assert sources_response.status_code == 200
     assert sources_response.json() == []
+
+
+def test_cards_and_graph_endpoints(client: TestClient):
+    run_response = client.post("/runs", json={"keyword": "RAG", "mode": "light"})
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+
+    cards_response = client.get(f"/runs/{run_id}/cards")
+    graph_response = client.get("/knowledge/graph")
+
+    assert cards_response.status_code == 200
+    assert len(cards_response.json()) == 3
+    assert graph_response.status_code == 200
+    graph = graph_response.json()
+    assert len(graph["nodes"]) >= 3
+    assert len(graph["edges"]) >= 2

@@ -18,9 +18,11 @@ frontend/vite.config.d.ts
 
 # Local app data
 data/
+backend/data/
 *.db
 *.sqlite
 *.sqlite3
+secrets.json
 
 # Local configuration and secrets
 .env

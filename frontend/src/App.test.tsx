@@ -30,7 +30,12 @@ describe("App", () => {
             json: async () => null,
           });
         }
-        if (url.endsWith("/settings/sources") || url.endsWith("/runs") || url.endsWith("/sources")) {
+        if (
+          url.endsWith("/settings/sources") ||
+          url.endsWith("/runs") ||
+          url.endsWith("/sources") ||
+          url.endsWith("/cards")
+        ) {
           return Promise.resolve({
             ok: true,
             json: async () => [],

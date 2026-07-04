@@ -15,6 +15,7 @@ from app.schemas import (
     SourceConfigWrite,
     SourceCreate,
 )
+from app.secrets import SecretStore
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -39,8 +40,9 @@ def merge_unique(existing: Iterable[str], incoming: Iterable[str]) -> list[str]:
 
 
 class KnowledgeRepository:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, secret_store: SecretStore | None = None):
         self.session = session
+        self.secret_store = secret_store or SecretStore()
 
     def create_run(self, payload: LearningRunCreate) -> models.LearningRun:
         run = models.LearningRun(keyword=payload.keyword.strip(), mode=payload.mode)
@@ -77,14 +79,17 @@ class KnowledgeRepository:
     def save_model_config(self, payload: ModelConfigWrite) -> models.ModelConfig:
         config = self.get_model_config()
         api_key_reference = None
+        api_key_mask = None
         if payload.api_key:
-            api_key_reference = mask_secret(payload.api_key)
+            api_key_reference = self.secret_store.put(payload.name, payload.api_key)
+            api_key_mask = mask_secret(payload.api_key)
         if config is None:
             config = models.ModelConfig(
                 name=payload.name,
                 base_url=payload.base_url,
                 model=payload.model,
                 api_key_reference=api_key_reference,
+                api_key_mask=api_key_mask,
                 default_temperature=payload.default_temperature,
                 max_tokens=payload.max_tokens,
             )
@@ -95,6 +100,7 @@ class KnowledgeRepository:
             config.model = payload.model
             if api_key_reference is not None:
                 config.api_key_reference = api_key_reference
+                config.api_key_mask = api_key_mask
             config.default_temperature = payload.default_temperature
             config.max_tokens = payload.max_tokens
         self.session.commit()
@@ -160,6 +166,10 @@ class KnowledgeRepository:
         self.session.refresh(card)
         return card
 
+    def list_cards_for_run(self, run_id: int) -> list[models.Card]:
+        statement = select(models.Card).where(models.Card.run_id == run_id).order_by(models.Card.sort_order.asc())
+        return list(self.session.scalars(statement))
+
     def upsert_node(self, payload: KnowledgeNodeCreate) -> models.KnowledgeNode:
         normalized_name = normalize_name(payload.name)
         statement = select(models.KnowledgeNode).where(
@@ -192,6 +202,11 @@ class KnowledgeRepository:
         self.session.commit()
         self.session.refresh(edge)
         return edge
+
+    def list_graph(self) -> tuple[list[models.KnowledgeNode], list[models.KnowledgeEdge]]:
+        nodes = list(self.session.scalars(select(models.KnowledgeNode).order_by(models.KnowledgeNode.id.asc())))
+        edges = list(self.session.scalars(select(models.KnowledgeEdge).order_by(models.KnowledgeEdge.id.asc())))
+        return nodes, edges
 
     def _sync_source_count(self, run_id: int) -> None:
         run = self.session.get(models.LearningRun, run_id)

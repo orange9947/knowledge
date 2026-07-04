@@ -19,12 +19,14 @@ import {
   createRun,
   fetchHealth,
   fetchModelSettings,
+  fetchRunCards,
   fetchRunSources,
   fetchRuns,
   fetchSourceSettings,
   saveModelSettings,
   saveSourceSettings,
   type HealthResponse,
+  type LearningCard,
   type LearningRun,
   type ModelSettings,
   type SourceRecord,
@@ -113,6 +115,7 @@ function App() {
   const [modelSettings, setModelSettings] = useState<ModelSettings | null>(null);
   const [sources, setSources] = useState<SourceSettings[]>([]);
   const [runSources, setRunSources] = useState<SourceRecord[]>([]);
+  const [cards, setCards] = useState<LearningCard[]>([]);
   const [modelForm, setModelForm] = useState(emptyModelForm);
   const [message, setMessage] = useState<string>("Ready");
   const [busy, setBusy] = useState(false);
@@ -214,8 +217,10 @@ function App() {
       setMessage(`Run #${run.id} created; collecting sources...`);
       const collected = await collectRun(run.id);
       const collectedSources = await fetchRunSources(run.id);
+      const generatedCards = await fetchRunCards(run.id);
       setRuns((current) => current.map((item) => (item.id === collected.id ? collected : item)));
       setRunSources(collectedSources);
+      setCards(generatedCards);
       setMessage(`Run #${run.id} ${collected.status}; ${collectedSources.length} source records`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to create run");
@@ -305,11 +310,12 @@ function App() {
               <Sparkles size={19} />
             </div>
             <div className="card-list">
-              {learningCards.map((card) => (
+              {(cards.length > 0 ? cards : learningCards).map((card) => (
                 <article className="learning-card" key={card.title}>
                   <span>{card.type}</span>
                   <h3>{card.title}</h3>
-                  <p>{card.body}</p>
+                  <p>{"summary" in card ? card.summary : card.body}</p>
+                  {"details" in card && card.details ? <small>{card.details}</small> : null}
                 </article>
               ))}
             </div>
@@ -409,7 +415,7 @@ function App() {
                 <span>API Key</span>
                 <input
                   value={modelForm.api_key}
-                  placeholder={modelSettings?.api_key_reference ?? "Not saved"}
+                  placeholder={modelSettings?.api_key_mask ?? "Not saved"}
                   onChange={(event) => setModelForm((current) => ({ ...current, api_key: event.target.value }))}
                 />
               </label>

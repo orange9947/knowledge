@@ -53,6 +53,7 @@ class ModelConfigRead(BaseModel):
     base_url: str
     model: str
     api_key_reference: str | None
+    api_key_mask: str | None = None
     default_temperature: float
     max_tokens: int
 
@@ -125,6 +126,20 @@ class CardCreate(BaseModel):
     sort_order: int = 0
 
 
+class CardRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int
+    type: str
+    title: str
+    summary: str
+    details: str | None
+    source_ids: list[int]
+    node_ids: list[int]
+    sort_order: int
+
+
 class KnowledgeNodeCreate(BaseModel):
     type: str
     name: str
@@ -139,3 +154,31 @@ class KnowledgeEdgeCreate(BaseModel):
     type: str
     confidence: float = Field(default=0.5, ge=0, le=1)
     evidence_source_ids: list[int] = Field(default_factory=list)
+
+
+class KnowledgeNodeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    name: str
+    normalized_name: str
+    summary: str | None
+    aliases: list[str]
+    tags: list[str]
+
+
+class KnowledgeEdgeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_node_id: int
+    target_node_id: int
+    type: str
+    confidence: float
+    evidence_source_ids: list[int]
+
+
+class GraphRead(BaseModel):
+    nodes: list[KnowledgeNodeRead]
+    edges: list[KnowledgeEdgeRead]

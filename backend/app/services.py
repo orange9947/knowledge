@@ -2,16 +2,24 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.ai import AIOrchestrator, AIOutput
 from app.crawler import SourceCrawler
 from app.discovery import discover_candidates
 from app.repositories import KnowledgeRepository
+from app.schemas import CardCreate, KnowledgeEdgeCreate, KnowledgeNodeCreate
 
 
 class LearningRunService:
-    def __init__(self, session: Session, crawler: SourceCrawler | None = None):
+    def __init__(
+        self,
+        session: Session,
+        crawler: SourceCrawler | None = None,
+        ai_orchestrator: AIOrchestrator | None = None,
+    ):
         self.session = session
         self.repository = KnowledgeRepository(session)
         self.crawler = crawler or SourceCrawler()
+        self.ai_orchestrator = ai_orchestrator or AIOrchestrator()
 
     def collect_sources(self, run_id: int):
         run = self.repository.get_run(run_id)
@@ -48,4 +56,73 @@ class LearningRunService:
             completed_at=datetime.now(timezone.utc),
             error_summary=error_summary,
         )
+        if final_status in {"completed", "partial"}:
+            self.generate_learning_output(run.id)
         return run
+
+    def generate_learning_output(self, run_id: int):
+        run = self.repository.get_run(run_id)
+        if run is None:
+            return None
+        sources = self.repository.list_sources_for_run(run_id)
+        model_config = self.repository.get_model_config()
+        output = self.ai_orchestrator.generate(run.keyword, sources, model_config)
+        self._persist_ai_output(run.id, sources, output)
+        return run
+
+    def _persist_ai_output(self, run_id: int, sources, output: AIOutput) -> None:
+        node_by_name = {}
+        for node_payload in output.nodes:
+            node = self.repository.upsert_node(
+                KnowledgeNodeCreate(
+                    type=node_payload.type,
+                    name=node_payload.name,
+                    summary=node_payload.summary,
+                    aliases=node_payload.aliases,
+                    tags=node_payload.tags,
+                )
+            )
+            node_by_name[node_payload.name] = node
+
+        for sort_order, card_payload in enumerate(output.cards):
+            source_ids = _source_ids_from_indexes(sources, card_payload.source_indexes)
+            card_nodes = [
+                node.id
+                for node in node_by_name.values()
+                if node.name in {card_payload.title, card_payload.title.replace(" 基础知识", "")}
+            ]
+            self.repository.add_card(
+                CardCreate(
+                    run_id=run_id,
+                    type=card_payload.type,
+                    title=card_payload.title,
+                    summary=card_payload.summary,
+                    details=card_payload.details,
+                    source_ids=source_ids,
+                    node_ids=card_nodes,
+                    sort_order=sort_order,
+                )
+            )
+
+        for edge_payload in output.edges:
+            source_node = node_by_name.get(edge_payload.source)
+            target_node = node_by_name.get(edge_payload.target)
+            if source_node is None or target_node is None:
+                continue
+            self.repository.add_edge(
+                KnowledgeEdgeCreate(
+                    source_node_id=source_node.id,
+                    target_node_id=target_node.id,
+                    type=edge_payload.type,
+                    confidence=edge_payload.confidence,
+                    evidence_source_ids=_source_ids_from_indexes(sources, edge_payload.source_indexes),
+                )
+            )
+
+
+def _source_ids_from_indexes(sources, indexes: list[int]) -> list[int]:
+    ids: list[int] = []
+    for index in indexes:
+        if 0 <= index < len(sources):
+            ids.append(sources[index].id)
+    return ids

@@ -133,6 +133,7 @@ class ModelConfig(Base):
     base_url: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(160))
     api_key_reference: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    api_key_mask: Mapped[str | None] = mapped_column(String(80), nullable=True)
     default_temperature: Mapped[float] = mapped_column(Float, default=0.2)
     max_tokens: Mapped[int] = mapped_column(Integer, default=4096)
 
