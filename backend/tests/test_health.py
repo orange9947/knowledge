@@ -11,4 +11,4 @@ def test_health_returns_ready_status():
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["database"] == "ready"
-    assert payload["app_name"] == "AI Learning Knowledge Graph"
+    assert payload["app_name"] == "AI 学习知识图谱"

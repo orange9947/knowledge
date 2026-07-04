@@ -1,22 +1,19 @@
-# AI Learning Knowledge Graph
+# AI 学习知识图谱
 
-Local-first learning assistant for turning a keyword into Chinese learning cards, source records, and graph-ready knowledge data.
+这是一个本地优先的辅助学习工具。你输入关键词，程序会从默认或自定义来源抓取相关资料，生成中文学习卡片，并把任务、来源、卡片和图谱节点保存到 SQLite。不同知识库之间相互隔离，适合按行业、项目或学习方向分开沉淀。
 
-## Current State
+## 当前能力
 
-This repository contains a runnable local Web MVP:
+- 后端：FastAPI + SQLite，本地保存学习任务、来源、卡片、知识库和图谱数据。
+- 前端：React/Vite，包含学习、知识图谱、历史记录和设置四个工作区。
+- 知识库：新建知识库后，任务和图谱只归属当前知识库，不会全部混在一起。
+- 来源：内置 GitHub、掘金、Dev.to、Stack Overflow、Hacker News、Google 新闻 RSS，也支持自定义 RSS、站点、入口链接和搜索页。
+- 模型：支持 OpenAI、DeepSeek 或兼容 OpenAI Chat Completions 的网关。
+- 历史：可以保留或删除任务，也可以保留、删除单个来源，或清空来源正文只保留元数据。
+- 导入导出：支持 JSON 导入导出，不会导出原始 API Key。
+- 无 Key 兜底：没有配置模型 API Key 时，会使用本地 fallback 生成基础卡片和图谱节点。
 
-- FastAPI backend with SQLite persistence.
-- React/Vite frontend with Learn, Graph, History, and Settings views.
-- Knowledge bases, so runs and graph nodes are scoped instead of globally merged.
-- Default learning sources seeded on first startup: GitHub, Juejin, Dev.to, Stack Overflow, Hacker News, and Google News RSS.
-- Custom source settings for built-in sources, RSS feeds, domains, entry URLs, and search pages.
-- Retention controls for pinning or deleting runs, deleting individual sources, and clearing extracted text.
-- OpenAI-compatible model settings for OpenAI, DeepSeek, or compatible gateways.
-- JSON import/export without raw API keys.
-- Local fallback card and graph generation when no model API key is configured.
-
-## Setup
+## 环境准备
 
 ```bash
 python3 -m venv .venv
@@ -25,9 +22,9 @@ pip install -e "backend[dev]"
 npm install --prefix frontend
 ```
 
-## Run
+## 启动
 
-Backend:
+启动后端：
 
 ```bash
 . .venv/bin/activate
@@ -35,52 +32,70 @@ cd backend
 python -m uvicorn app.main:app --reload
 ```
 
-Frontend:
+启动前端：
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-The frontend runs on `http://localhost:5173` and proxies API calls to `http://localhost:8000`.
+前端地址是 `http://localhost:5173`，接口请求会代理到 `http://localhost:8000`。
 
-## Use
+## 使用指南
 
-1. Open the frontend.
-2. Select or create a knowledge base.
-3. Enter a keyword and keep the default `light` mode for quick runs.
-4. Click `Run`.
-5. Review learning cards, captured sources, graph nodes, and history.
+1. 打开前端页面。
+2. 在顶部选择一个知识库，或进入“设置”新建知识库。
+3. 回到“学习”，输入关键词。
+4. 选择运行模式。默认“轻量”适合快速试用，“标准”和“深度”会尝试抓取更多候选来源。
+5. 点击“运行”，等待任务抓取来源并生成学习卡片。
+6. 在“学习”查看学习卡片、正文抓取结果和来源状态。
+7. 在“知识图谱”查看当前知识库的节点和关系，点击节点可查看摘要与标签。
+8. 在“历史记录”筛选任务、查看某次任务来源，并按需保留或删除任务/来源。
 
-The first run works without saving source settings because the backend seeds default sources. Settings can add, edit, disable, reset, or save custom RSS feeds, domains, entry URLs, and search pages.
-History can pin or delete a complete run. Captured sources can be pinned, deleted, or stripped of extracted page text while keeping title, URL, snippet, and status metadata.
+## 配置模型
 
-## Source Behavior
+进入“设置”里的“模型”区域：
 
-The crawler is best-effort. Some sites block scraping or require JavaScript; those sources are saved as `partial` or `failed` with a reason instead of failing the whole run. RSS entries and JSON/text responses are preserved as usable partial material when full article extraction is not available.
+- `接口地址`：OpenAI 默认可用 `https://api.openai.com/v1`；DeepSeek 可填 `https://api.deepseek.com`。
+- `模型名称`：按服务商填写，例如 `gpt-4.1-mini` 或 `deepseek-chat`。
+- `API 密钥`：保存后只显示脱敏值，原始密钥不出现在导出文件里。
 
-## API Highlights
+配置模型后，新任务会优先使用模型基于抓取正文生成学习卡片和图谱节点；如果模型调用失败，会回退到本地生成。
 
-- `POST /runs`
-- `POST /runs/{run_id}/collect`
-- `GET /runs/{run_id}`
-- `GET /runs/{run_id}/status`
-- `PATCH /runs/{run_id}/retention`
-- `DELETE /runs/{run_id}`
-- `GET /runs/{run_id}/sources`
-- `GET /runs/{run_id}/cards`
-- `PATCH /sources/{source_id}/retention`
-- `POST /sources/{source_id}/clear-text`
-- `DELETE /sources/{source_id}`
-- `GET /knowledge-bases`
-- `POST /knowledge-bases`
-- `GET /knowledge/graph`
-- `GET /knowledge/nodes/{node_id}`
-- `GET /knowledge/search`
-- `GET /export`
-- `POST /import`
+## 管理来源
 
-## Test
+进入“设置”里的“学习来源”区域：
+
+- 点击“新增来源”添加 RSS、站点、入口链接或搜索页。
+- 搜索页 URL 可以使用 `{keyword}` 占位符，例如 `https://example.com/search?q={keyword}`。
+- 关闭“启用”后，该来源不会参与后续任务。
+- 点击“重置默认来源”会恢复默认来源草稿，点击“保存来源设置”后才会写入后端。
+
+抓取是尽力而为的。有些网站会阻止爬取或依赖 JavaScript 渲染，系统会把对应来源标为“部分成功”或“失败”，不会中断整个学习任务。
+
+## 历史与保留
+
+“历史记录”里可以：
+
+- 按关键词或状态筛选任务。
+- 点击任务查看该任务抓取到的来源。
+- 点击保留图标固定重要任务或来源。
+- 删除任务会删除该任务下的来源、卡片和相关图谱数据。
+- 删除单个来源只移除该来源及其引用。
+- 清空正文会移除抓取正文，但保留标题、URL、站点、摘要、状态等元数据。
+
+## 导入导出
+
+在“历史记录”右上角：
+
+- 点击“导出”下载当前知识库的数据 JSON。
+- 点击“导入”选择 JSON 文件恢复数据。
+
+导出文件包含知识库、任务、来源、卡片、节点和关系，不包含原始 API Key。
+
+## 测试
+
+后端：
 
 ```bash
 . .venv/bin/activate
@@ -88,20 +103,22 @@ cd backend
 pytest
 ```
 
+前端：
+
 ```bash
 cd frontend
 npm test -- --run
 npm run build
 ```
 
-## Known Limits
+## 已知限制
 
-- Run execution is synchronous in this MVP; long deep-mode runs can hold the request open.
-- Search-page crawling is experimental and depends on each site's markup and blocking behavior.
-- The graph view shows a compact preview and node details, not a full force-directed graph editor.
-- The fallback generator creates useful placeholder cards; configure a model API key for higher-quality synthesis.
+- 当前任务执行是同步的，深度模式可能让请求等待较久。
+- 搜索页解析依赖目标站点结构，稳定性不如 RSS 和固定入口链接。
+- 知识图谱目前是轻量预览和节点详情，不是完整图谱编辑器。
+- 本地 fallback 只生成基础学习内容；想要更高质量总结，需要配置模型 API Key。
 
-## Documents
+## 相关文档
 
-- Design spec: `docs/superpowers/specs/2026-07-04-ai-learning-knowledge-graph-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-07-04-ai-learning-knowledge-graph-implementation-plan.md`
+- 设计文档：`docs/superpowers/specs/2026-07-04-ai-learning-knowledge-graph-design.md`
+- 实现计划：`docs/superpowers/plans/2026-07-04-ai-learning-knowledge-graph-implementation-plan.md`

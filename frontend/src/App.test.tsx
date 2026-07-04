@@ -23,7 +23,7 @@ describe("App", () => {
             ok: true,
             json: async () => ({
               status: "ok",
-              app_name: "AI Learning Knowledge Graph",
+              app_name: "AI 学习知识图谱",
               version: "0.1.0",
               database: "ready",
             }),
@@ -47,8 +47,8 @@ describe("App", () => {
             json: async () => [
               {
                 id: 1,
-                name: "Default",
-                description: "Default knowledge base",
+                name: "默认知识库",
+                description: "默认知识库",
                 created_at: "2026-07-04T00:00:00Z",
                 updated_at: "2026-07-04T00:00:00Z",
               },
@@ -76,9 +76,9 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "AI Learning Knowledge Graph" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Knowledge base" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI 学习知识图谱" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "运行" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "知识库" })).toBeInTheDocument();
     expect(await screen.findByText("API 0.1.0")).toBeInTheDocument();
   });
 
@@ -92,7 +92,7 @@ describe("App", () => {
           ok: true,
           json: async () => ({
             status: "ok",
-            app_name: "AI Learning Knowledge Graph",
+            app_name: "AI 学习知识图谱",
             version: "0.1.0",
             database: "ready",
           }),
@@ -107,7 +107,7 @@ describe("App", () => {
           json: async () => [
             {
               id: 1,
-              name: "Default",
+              name: "默认知识库",
               description: null,
               created_at: "2026-07-04T00:00:00Z",
               updated_at: "2026-07-04T00:00:00Z",
@@ -203,7 +203,7 @@ describe("App", () => {
           json: async () => [
             {
               id: 1,
-              name: "GitHub repositories",
+              name: "GitHub 仓库",
               type: "builtin",
               enabled: true,
               url_or_domain: "github.com",
@@ -307,35 +307,35 @@ describe("App", () => {
     render(<App />);
     await screen.findByText("API 0.1.0");
 
-    await user.click(screen.getByRole("button", { name: "Knowledge graph" }));
+    await user.click(screen.getByRole("button", { name: "知识图谱" }));
     expect(screen.getByRole("heading", { name: "知识关系" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Run" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "运行" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "RAG" }));
     expect(await screen.findByText("Retrieval augmented generation")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "History" }));
+    await user.click(screen.getByRole("button", { name: "历史记录" }));
     expect(screen.getByRole("heading", { name: "运行记录" })).toBeInTheDocument();
-    await user.type(screen.getByRole("textbox", { name: "Filter history" }), "RAG");
+    await user.type(screen.getByRole("textbox", { name: "筛选历史记录" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
     expect(await screen.findByText("RAG repositories")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Pin run 7" }));
-    expect(await screen.findByText("Pinned run #7")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Pin source 1" }));
-    expect(await screen.findByText("Pinned source #1")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Clear text 1" }));
-    expect(await screen.findByText("Cleared extracted text for source #1")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Delete source 1" }));
-    expect(await screen.findByText("Deleted source #1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保留任务 7" }));
+    expect(await screen.findByText("已保留任务 #7")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保留来源 1" }));
+    expect(await screen.findByText("已保留来源 #1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "清空正文 1" }));
+    expect(await screen.findByText("已清空来源 #1 的正文")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除来源 1" }));
+    expect(await screen.findByText("已删除来源 #1")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create base" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Add source" }));
-    await user.clear(screen.getByLabelText(/Source name -/));
-    await user.type(screen.getByLabelText(/Source name -/), "Custom feed");
-    await user.type(screen.getByLabelText(/Source URL -/), "https://example.com/feed.xml");
-    await user.click(screen.getByRole("button", { name: "Save source settings" }));
-    expect(await screen.findByText("Saved 2 source settings")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建知识库" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "新增来源" }));
+    await user.clear(screen.getByLabelText(/来源名称 -/));
+    await user.type(screen.getByLabelText(/来源名称 -/), "自定义源");
+    await user.type(screen.getByLabelText(/来源 URL -/), "https://example.com/feed.xml");
+    await user.click(screen.getByRole("button", { name: "保存来源设置" }));
+    expect(await screen.findByText("已保存 2 个来源设置")).toBeInTheDocument();
     const sourceSaveCall = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/settings/sources") && init?.method === "PUT",
     );
@@ -345,7 +345,7 @@ describe("App", () => {
       expect.arrayContaining([
         expect.objectContaining({
           enabled: true,
-          name: "Custom feed",
+          name: "自定义源",
           type: "rss",
           url_or_domain: "https://example.com/feed.xml",
         }),

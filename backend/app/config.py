@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "AI Learning Knowledge Graph"
+    app_name: str = "AI 学习知识图谱"
     app_version: str = "0.1.0"
     database_url: str = "sqlite:///./data/knowledge.db"
     cors_origins: list[str] = [

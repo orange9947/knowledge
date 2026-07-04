@@ -223,7 +223,7 @@ def _source_materials(sources: list[models.Source]) -> list[Material]:
 
 def _source_node_name(material: Material) -> str:
     label = material.site or material.url
-    return f"Source: {material.title} ({label})"
+    return f"来源：{material.title}（{label}）"
 
 
 def _build_prompt(keyword: str, materials: list[Material]) -> str:

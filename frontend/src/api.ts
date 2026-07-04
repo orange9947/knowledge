@@ -138,7 +138,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      detail = typeof payload.detail === "string" ? `：${payload.detail}` : "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(`请求失败：${response.status}${detail}`);
   }
   if (response.status === 204) {
     return undefined as T;

@@ -4,7 +4,7 @@ from app.schemas import SourceConfigWrite
 def default_source_configs() -> list[SourceConfigWrite]:
     return [
         SourceConfigWrite(
-            name="GitHub repositories",
+            name="GitHub 仓库",
             type="builtin",
             enabled=True,
             url_or_domain="github.com",
@@ -12,7 +12,7 @@ def default_source_configs() -> list[SourceConfigWrite]:
             crawl_depth=1,
         ),
         SourceConfigWrite(
-            name="Juejin search",
+            name="掘金搜索",
             type="search_page",
             enabled=True,
             url_or_domain="https://juejin.cn/search?query={keyword}&type=0",
@@ -20,7 +20,7 @@ def default_source_configs() -> list[SourceConfigWrite]:
             crawl_depth=1,
         ),
         SourceConfigWrite(
-            name="Dev.to search",
+            name="Dev.to 搜索",
             type="search_page",
             enabled=True,
             url_or_domain="https://dev.to/search?q={keyword}",
@@ -28,7 +28,7 @@ def default_source_configs() -> list[SourceConfigWrite]:
             crawl_depth=1,
         ),
         SourceConfigWrite(
-            name="Stack Overflow search",
+            name="Stack Overflow 搜索",
             type="search_page",
             enabled=True,
             url_or_domain="https://stackoverflow.com/search?q={keyword}",
@@ -36,7 +36,7 @@ def default_source_configs() -> list[SourceConfigWrite]:
             crawl_depth=1,
         ),
         SourceConfigWrite(
-            name="Hacker News search",
+            name="Hacker News 搜索",
             type="search_page",
             enabled=True,
             url_or_domain="https://hn.algolia.com/?q={keyword}",
@@ -44,7 +44,7 @@ def default_source_configs() -> list[SourceConfigWrite]:
             crawl_depth=1,
         ),
         SourceConfigWrite(
-            name="Google News technology RSS",
+            name="Google 新闻技术 RSS",
             type="rss",
             enabled=True,
             url_or_domain="https://news.google.com/rss/search?q={keyword}%20technology&hl=en-US&gl=US&ceid=US:en",

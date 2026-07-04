@@ -34,7 +34,7 @@ class LearningRunService:
                 run,
                 "partial",
                 completed_at=datetime.now(timezone.utc),
-                error_summary="No source candidates discovered. Add RSS feeds, entry URLs, or source configs.",
+                error_summary="没有发现可用来源候选。请添加 RSS、入口链接或来源配置。",
             )
             return run
 
@@ -46,10 +46,10 @@ class LearningRunService:
 
         if any(status == "success" for status in statuses):
             final_status = "completed" if all(status == "success" for status in statuses) else "partial"
-            error_summary = None if final_status == "completed" else "Some sources failed or only partially extracted."
+            error_summary = None if final_status == "completed" else "部分来源抓取失败或只提取到部分内容。"
         else:
             final_status = "failed"
-            error_summary = "No sources could be extracted successfully."
+            error_summary = "没有来源成功提取内容。"
         self.repository.update_run_status(
             run,
             final_status,

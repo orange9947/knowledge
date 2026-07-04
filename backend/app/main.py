@@ -39,6 +39,11 @@ async def lifespan(app: FastAPI):
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
+KNOWLEDGE_BASE_NOT_FOUND = "知识库不存在"
+NODE_NOT_FOUND = "节点不存在"
+RUN_NOT_FOUND = "任务不存在"
+SOURCE_NOT_FOUND = "来源不存在"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -106,7 +111,7 @@ def create_run(
     repository = KnowledgeRepository(session)
     knowledge_base_id = repository.resolve_knowledge_base_id(payload.knowledge_base_id)
     if repository.get_knowledge_base(knowledge_base_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
     return repository.create_run(payload)
 
 
@@ -115,7 +120,7 @@ def list_runs(knowledge_base_id: int | None = None, session: Session = Depends(g
     repository = KnowledgeRepository(session)
     resolved_id = repository.resolve_knowledge_base_id(knowledge_base_id)
     if repository.get_knowledge_base(resolved_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
     return repository.list_runs(resolved_id)
 
 
@@ -124,7 +129,7 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     run = repository.get_run(run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return RunDetailRead(
         run=run,
         sources=repository.list_sources_for_run(run_id),
@@ -136,7 +141,7 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)):
 def get_run_status(run_id: int, session: Session = Depends(get_session)):
     run = KnowledgeRepository(session).get_run(run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return run
 
 
@@ -149,7 +154,7 @@ def update_run_retention(
     repository = KnowledgeRepository(session)
     run = repository.get_run(run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return repository.update_run_retention(run, payload.is_pinned)
 
 
@@ -158,7 +163,7 @@ def delete_run(run_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     run = repository.get_run(run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     repository.delete_run(run)
     return None
 
@@ -167,7 +172,7 @@ def delete_run(run_id: int, session: Session = Depends(get_session)):
 def collect_run_sources(run_id: int, session: Session = Depends(get_session)):
     run = LearningRunService(session).collect_sources(run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return run
 
 
@@ -175,7 +180,7 @@ def collect_run_sources(run_id: int, session: Session = Depends(get_session)):
 def list_run_sources(run_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     if repository.get_run(run_id) is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return repository.list_sources_for_run(run_id)
 
 
@@ -188,7 +193,7 @@ def update_source_retention(
     repository = KnowledgeRepository(session)
     source = repository.get_source(source_id)
     if source is None:
-        raise HTTPException(status_code=404, detail="Source not found")
+        raise HTTPException(status_code=404, detail=SOURCE_NOT_FOUND)
     return repository.update_source_retention(source, payload.is_pinned)
 
 
@@ -197,7 +202,7 @@ def clear_source_text(source_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     source = repository.get_source(source_id)
     if source is None:
-        raise HTTPException(status_code=404, detail="Source not found")
+        raise HTTPException(status_code=404, detail=SOURCE_NOT_FOUND)
     return repository.clear_source_text(source)
 
 
@@ -206,7 +211,7 @@ def delete_source(source_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     source = repository.get_source(source_id)
     if source is None:
-        raise HTTPException(status_code=404, detail="Source not found")
+        raise HTTPException(status_code=404, detail=SOURCE_NOT_FOUND)
     repository.delete_source(source)
     return None
 
@@ -215,7 +220,7 @@ def delete_source(source_id: int, session: Session = Depends(get_session)):
 def generate_run_output(run_id: int, session: Session = Depends(get_session)):
     run = LearningRunService(session).generate_learning_output(run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return run
 
 
@@ -223,7 +228,7 @@ def generate_run_output(run_id: int, session: Session = Depends(get_session)):
 def list_run_cards(run_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     if repository.get_run(run_id) is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return repository.list_cards_for_run(run_id)
 
 
@@ -232,7 +237,7 @@ def get_knowledge_graph(knowledge_base_id: int | None = None, session: Session =
     repository = KnowledgeRepository(session)
     resolved_id = repository.resolve_knowledge_base_id(knowledge_base_id)
     if repository.get_knowledge_base(resolved_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
     nodes, edges = repository.list_graph(resolved_id)
     return GraphRead(nodes=nodes, edges=edges)
 
@@ -246,9 +251,9 @@ def get_knowledge_node(
     repository = KnowledgeRepository(session)
     node = repository.get_node(node_id)
     if node is None:
-        raise HTTPException(status_code=404, detail="Node not found")
+        raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
     if knowledge_base_id is not None and node.knowledge_base_id != knowledge_base_id:
-        raise HTTPException(status_code=404, detail="Node not found")
+        raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
     return node
 
 
@@ -262,7 +267,7 @@ def search_knowledge(
     repository = KnowledgeRepository(session)
     resolved_id = repository.resolve_knowledge_base_id(knowledge_base_id)
     if repository.get_knowledge_base(resolved_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
     return repository.search_nodes(q, knowledge_base_id=resolved_id, node_type=type)
 
 
@@ -270,7 +275,7 @@ def search_knowledge(
 def export_data(knowledge_base_id: int | None = None, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
     if knowledge_base_id is not None and repository.get_knowledge_base(knowledge_base_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
     return export_knowledge(repository, knowledge_base_id=knowledge_base_id)
 
 

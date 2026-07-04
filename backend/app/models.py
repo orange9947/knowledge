@@ -163,7 +163,7 @@ class ModelConfig(Base):
     __tablename__ = "model_configs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), default="Default")
+    name: Mapped[str] = mapped_column(String(120), default="默认配置")
     base_url: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(160))
     api_key_reference: Mapped[str | None] = mapped_column(String(240), nullable=True)

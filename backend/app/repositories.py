@@ -21,7 +21,8 @@ from app.secrets import SecretStore
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
-DEFAULT_KNOWLEDGE_BASE_NAME = "Default"
+DEFAULT_KNOWLEDGE_BASE_NAME = "默认知识库"
+LEGACY_DEFAULT_KNOWLEDGE_BASE_NAME = "Default"
 
 
 def normalize_name(value: str) -> str:
@@ -51,9 +52,17 @@ class KnowledgeRepository:
         statement = select(models.KnowledgeBase).where(models.KnowledgeBase.name == DEFAULT_KNOWLEDGE_BASE_NAME)
         knowledge_base = self.session.scalar(statement)
         if knowledge_base is None:
+            legacy_statement = select(models.KnowledgeBase).where(models.KnowledgeBase.name == LEGACY_DEFAULT_KNOWLEDGE_BASE_NAME)
+            knowledge_base = self.session.scalar(legacy_statement)
+            if knowledge_base is not None:
+                knowledge_base.name = DEFAULT_KNOWLEDGE_BASE_NAME
+                knowledge_base.description = knowledge_base.description or "用于存放未分类学习任务的默认知识库。"
+                self.session.commit()
+                self.session.refresh(knowledge_base)
+        if knowledge_base is None:
             knowledge_base = models.KnowledgeBase(
                 name=DEFAULT_KNOWLEDGE_BASE_NAME,
-                description="Default knowledge base for existing and uncategorized learning runs.",
+                description="用于存放未分类学习任务的默认知识库。",
             )
             self.session.add(knowledge_base)
             self.session.commit()

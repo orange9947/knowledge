@@ -175,10 +175,10 @@ def _domain_candidates(keyword: str, config: models.SourceConfig) -> list[Source
     return [
         SourceCandidate(
             url=_domain_search_url(domain, quote_plus(keyword)),
-            title=f"{config.name} domain search",
+            title=f"{config.name} 站内搜索",
             site=domain,
             language=config.language_hint,
-            snippet=f"Search results from configured domain {domain}.",
+            snippet=f"来自已配置站点 {domain} 的搜索结果。",
         )
     ]
 
@@ -191,10 +191,10 @@ def _builtin_candidates(keyword: str, config: models.SourceConfig) -> list[Sourc
     return [
         SourceCandidate(
             url=url,
-            title=f"GitHub repositories for {keyword}",
+            title=f"{keyword} 相关 GitHub 仓库",
             site="github.com",
             language=config.language_hint or "en",
-            snippet="Repository search results generated from the configured GitHub built-in source.",
+            snippet="来自内置 GitHub 来源的仓库搜索结果。",
         )
     ]
 
@@ -225,10 +225,10 @@ def _search_page_candidates(
     candidates = [
         SourceCandidate(
             url=url,
-            title=f"Search page for {keyword}",
+            title=f"{keyword} 搜索页",
             site=site_from_url(url),
             language=config.language_hint,
-            snippet="Experimental search-page source.",
+            snippet="来自自定义搜索页来源的候选结果。",
         )
     ]
     try:
@@ -266,7 +266,7 @@ def extract_search_result_links(
                 title=text or site,
                 site=site,
                 language=language_hint,
-                snippet=f"Search result from {site}.",
+                snippet=f"来自 {site} 的搜索结果。",
             )
         )
     return dedupe_candidates(candidates)
@@ -373,10 +373,10 @@ def _looks_like_result_url(url: str) -> bool:
     return [
         SourceCandidate(
             url=url,
-            title=f"Search page for {keyword}",
+            title=f"{keyword} 搜索页",
             site=site_from_url(url),
             language=config.language_hint,
-            snippet="Experimental search-page source.",
+            snippet="来自自定义搜索页来源的候选结果。",
         )
     ]
 

@@ -56,7 +56,7 @@ def test_model_settings_mask_api_key(client: TestClient):
 def test_source_settings_replace_existing_configs(client: TestClient):
     initial_response = client.get("/settings/sources")
     assert initial_response.status_code == 200
-    assert "GitHub repositories" in [item["name"] for item in initial_response.json()]
+    assert "GitHub 仓库" in [item["name"] for item in initial_response.json()]
 
     response = client.put(
         "/settings/sources",
@@ -220,7 +220,7 @@ def test_run_and_source_retention_delete_and_clear_text(client: TestClient):
 def test_knowledge_base_endpoints_create_default_and_custom_base(client: TestClient):
     list_response = client.get("/knowledge-bases")
     assert list_response.status_code == 200
-    assert [item["name"] for item in list_response.json()] == ["Default"]
+    assert [item["name"] for item in list_response.json()] == ["默认知识库"]
 
     create_response = client.post(
         "/knowledge-bases",
@@ -232,4 +232,4 @@ def test_knowledge_base_endpoints_create_default_and_custom_base(client: TestCli
     assert created["description"] == "Robot learning notes"
 
     list_response = client.get("/knowledge-bases")
-    assert [item["name"] for item in list_response.json()] == ["Default", "Robotics"]
+    assert [item["name"] for item in list_response.json()] == ["默认知识库", "Robotics"]

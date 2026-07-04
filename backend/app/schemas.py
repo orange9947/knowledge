@@ -61,7 +61,7 @@ class RunDetailRead(BaseModel):
 
 
 class ModelConfigWrite(BaseModel):
-    name: str = Field(default="Default", min_length=1, max_length=120)
+    name: str = Field(default="默认配置", min_length=1, max_length=120)
     base_url: str = Field(min_length=1)
     model: str = Field(min_length=1, max_length=160)
     api_key: str | None = Field(default=None, min_length=1)
