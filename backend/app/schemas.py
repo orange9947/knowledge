@@ -205,11 +205,19 @@ class CardApprovalRequest(BaseModel):
 
 class KnowledgeNodeCreate(BaseModel):
     knowledge_base_id: int
-    type: str
-    name: str
+    type: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=300)
     summary: str | None = None
     aliases: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+
+
+class KnowledgeNodeUpdate(BaseModel):
+    type: str | None = Field(default=None, min_length=1, max_length=64)
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    summary: str | None = None
+    aliases: list[str] | None = None
+    tags: list[str] | None = None
 
 
 class KnowledgeEdgeCreate(BaseModel):

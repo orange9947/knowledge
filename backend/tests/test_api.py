@@ -397,6 +397,101 @@ def test_run_detail_status_and_knowledge_search(client: TestClient):
     assert wrong_base_response.status_code == 404
 
 
+def test_manage_knowledge_nodes(client: TestClient):
+    base_response = client.post("/knowledge-bases", json={"name": "Editable Graph"})
+    knowledge_base_id = base_response.json()["id"]
+
+    create_response = client.post(
+        "/knowledge/nodes",
+        json={
+            "knowledge_base_id": knowledge_base_id,
+            "type": "concept",
+            "name": "向量数据库",
+            "summary": "用于相似度检索的存储系统",
+            "aliases": ["Vector DB", "Vector DB"],
+            "tags": ["RAG", "  "],
+        },
+    )
+
+    assert create_response.status_code == 201
+    node = create_response.json()
+    assert node["name"] == "向量数据库"
+    assert node["aliases"] == ["Vector DB"]
+    assert node["tags"] == ["RAG"]
+
+    graph_response = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}")
+    assert graph_response.status_code == 200
+    assert [item["id"] for item in graph_response.json()["nodes"]] == [node["id"]]
+
+    update_response = client.patch(
+        f"/knowledge/nodes/{node['id']}?knowledge_base_id={knowledge_base_id}",
+        json={
+            "type": "skill",
+            "name": "向量检索",
+            "summary": "更新后的摘要",
+            "aliases": ["Vector Search"],
+            "tags": ["检索"],
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["type"] == "skill"
+    assert updated["name"] == "向量检索"
+    assert updated["summary"] == "更新后的摘要"
+    assert updated["aliases"] == ["Vector Search"]
+    assert updated["tags"] == ["检索"]
+
+    duplicate_response = client.post(
+        "/knowledge/nodes",
+        json={
+            "knowledge_base_id": knowledge_base_id,
+            "type": "skill",
+            "name": "向量检索",
+        },
+    )
+    assert duplicate_response.status_code == 201
+    assert duplicate_response.json()["id"] == node["id"]
+
+    wrong_base_response = client.patch(
+        f"/knowledge/nodes/{node['id']}?knowledge_base_id=1",
+        json={"summary": "不应写入"},
+    )
+    assert wrong_base_response.status_code == 404
+
+
+def test_delete_knowledge_node_cleans_graph_and_card_links(client: TestClient):
+    base_response = client.post("/knowledge-bases", json={"name": "Delete Node Graph"})
+    knowledge_base_id = base_response.json()["id"]
+    run_response = client.post(
+        "/runs",
+        json={"keyword": "Graph RAG", "mode": "light", "knowledge_base_id": knowledge_base_id},
+    )
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+    cards = client.get(f"/runs/{run_id}/cards").json()
+    approve_response = client.post(
+        f"/runs/{run_id}/cards/approve",
+        json={"card_ids": [card["id"] for card in cards]},
+    )
+    assert approve_response.status_code == 200
+
+    graph = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    node_id = graph["nodes"][0]["id"]
+    assert any(node_id in card["node_ids"] for card in client.get(f"/runs/{run_id}/cards").json())
+
+    delete_response = client.delete(f"/knowledge/nodes/{node_id}?knowledge_base_id={knowledge_base_id}")
+
+    assert delete_response.status_code == 204
+    graph_after_delete = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    assert all(node["id"] != node_id for node in graph_after_delete["nodes"])
+    assert all(
+        edge["source_node_id"] != node_id and edge["target_node_id"] != node_id
+        for edge in graph_after_delete["edges"]
+    )
+    cards_after_delete = client.get(f"/runs/{run_id}/cards").json()
+    assert all(node_id not in card["node_ids"] for card in cards_after_delete)
+
+
 def test_summarize_run_endpoint_adds_summary_and_keyword_hint(client: TestClient, monkeypatch):
     client.put(
         "/settings/model",

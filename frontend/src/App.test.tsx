@@ -4,6 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
+type MockGraphNode = {
+  aliases: string[];
+  id: number;
+  knowledge_base_id: number;
+  name: string;
+  normalized_name: string;
+  summary: string | null;
+  tags: string[];
+  type: string;
+};
+
 describe("App", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -89,6 +100,39 @@ describe("App", () => {
   it("switches sidebar buttons to matching workspace panels", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(true);
+    let graphNodes: MockGraphNode[] = [
+      {
+        id: 1,
+        knowledge_base_id: 1,
+        type: "keyword",
+        name: "RAG",
+        normalized_name: "rag",
+        summary: "Retrieval augmented generation",
+        aliases: [],
+        tags: ["keyword"],
+      },
+      {
+        id: 2,
+        knowledge_base_id: 1,
+        type: "concept",
+        name: "检索增强",
+        normalized_name: "检索增强",
+        summary: "结合检索和生成",
+        aliases: ["Retrieval Augmentation"],
+        tags: ["concept"],
+      },
+    ];
+    let graphEdges = [
+      {
+        id: 1,
+        knowledge_base_id: 1,
+        source_node_id: 1,
+        target_node_id: 2,
+        type: "related_to",
+        confidence: 0.8,
+        evidence_source_ids: [],
+      },
+    ];
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/health")) {
@@ -309,35 +353,73 @@ describe("App", () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            nodes: [
-              {
-                id: 1,
-                knowledge_base_id: 1,
-                type: "keyword",
-                name: "RAG",
-                normalized_name: "rag",
-                summary: "Retrieval augmented generation",
-                aliases: [],
-                tags: ["keyword"],
-              },
-            ],
-            edges: [],
+            nodes: graphNodes,
+            edges: graphEdges,
           }),
         });
+      }
+      if (url.endsWith("/knowledge/nodes") && init?.method === "POST") {
+        const payload = JSON.parse(String(init.body)) as {
+          aliases?: string[];
+          name: string;
+          summary?: string | null;
+          tags?: string[];
+          type: string;
+        };
+        const created = {
+          id: 3,
+          knowledge_base_id: 1,
+          type: payload.type,
+          name: payload.name,
+          normalized_name: payload.name.toLowerCase(),
+          summary: payload.summary ?? null,
+          aliases: payload.aliases ?? [],
+          tags: payload.tags ?? [],
+        };
+        graphNodes = [...graphNodes, created];
+        return Promise.resolve({ ok: true, json: async () => created });
+      }
+      if (url.includes("/knowledge/nodes/3") && init?.method === "PATCH") {
+        const payload = JSON.parse(String(init.body)) as {
+          aliases?: string[];
+          name?: string;
+          summary?: string | null;
+          tags?: string[];
+          type?: string;
+        };
+        graphNodes = graphNodes.map((node) =>
+          node.id === 3
+            ? {
+                ...node,
+                ...payload,
+                name: payload.name ?? node.name,
+                normalized_name: (payload.name ?? node.name).toLowerCase(),
+                summary: payload.summary ?? node.summary,
+                aliases: payload.aliases ?? node.aliases,
+                tags: payload.tags ?? node.tags,
+              }
+            : node,
+        );
+        return Promise.resolve({
+          ok: true,
+          json: async () => graphNodes.find((node) => node.id === 3),
+        });
+      }
+      if (url.includes("/knowledge/nodes/3") && init?.method === "DELETE") {
+        graphNodes = graphNodes.filter((node) => node.id !== 3);
+        graphEdges = graphEdges.filter((edge) => edge.source_node_id !== 3 && edge.target_node_id !== 3);
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
       }
       if (url.includes("/knowledge/nodes/1")) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            id: 1,
-            knowledge_base_id: 1,
-            type: "keyword",
-            name: "RAG",
-            normalized_name: "rag",
-            summary: "Retrieval augmented generation",
-            aliases: [],
-            tags: ["keyword"],
-          }),
+          json: async () => graphNodes.find((node) => node.id === 1),
+        });
+      }
+      if (url.includes("/knowledge/nodes/2")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => graphNodes.find((node) => node.id === 2),
         });
       }
       if (url.endsWith("/runs/7")) {
@@ -585,6 +667,23 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "运行" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "RAG" }));
     expect(await screen.findByText("Retrieval augmented generation")).toBeInTheDocument();
+    expect(screen.getByText("相关关系")).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "新建关键点" })[0]);
+    await user.type(screen.getByLabelText("关键点名称"), "向量检索");
+    await user.selectOptions(screen.getByLabelText("关键点类型"), "skill");
+    await user.type(screen.getByLabelText("关键点摘要"), "用于从向量库找相似内容");
+    await user.type(screen.getByLabelText("关键点别名"), "Vector Search");
+    await user.type(screen.getByLabelText("关键点标签"), "检索,实践");
+    await user.click(screen.getByRole("button", { name: "保存关键点" }));
+    expect(await screen.findByText("已创建关键点：向量检索")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "编辑关键点" }));
+    await user.clear(screen.getByLabelText("关键点摘要"));
+    await user.type(screen.getByLabelText("关键点摘要"), "更新后的向量检索说明");
+    await user.click(screen.getByRole("button", { name: "保存关键点" }));
+    expect(await screen.findByText("已更新关键点：向量检索")).toBeInTheDocument();
+    expect(await screen.findByText("更新后的向量检索说明")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除关键点" }));
+    expect(await screen.findByText("已删除关键点：向量检索")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "历史记录" }));
     expect(screen.getByRole("heading", { name: "运行记录" })).toBeInTheDocument();
@@ -677,6 +776,31 @@ describe("App", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/knowledge-bases/2",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    const nodeCreateCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/knowledge/nodes") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(nodeCreateCall?.[1]?.body))).toEqual({
+      aliases: ["Vector Search"],
+      knowledge_base_id: 1,
+      name: "向量检索",
+      summary: "用于从向量库找相似内容",
+      tags: ["检索", "实践"],
+      type: "skill",
+    });
+    const nodeUpdateCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/knowledge/nodes/3?knowledge_base_id=1") && init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(nodeUpdateCall?.[1]?.body))).toEqual({
+      aliases: ["Vector Search"],
+      name: "向量检索",
+      summary: "更新后的向量检索说明",
+      tags: ["检索", "实践"],
+      type: "skill",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/knowledge/nodes/3?knowledge_base_id=1",
       expect.objectContaining({ method: "DELETE" }),
     );
   });

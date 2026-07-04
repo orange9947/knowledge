@@ -27,8 +27,10 @@ import {
   clearSourceText,
   collectRun,
   createKnowledgeBase,
+  createKnowledgeNode,
   createRun,
   deleteKnowledgeBase,
+  deleteKnowledgeNode,
   deleteRun,
   deleteSource,
   exportKnowledge,
@@ -48,6 +50,7 @@ import {
   summarizeRun,
   testModelConnection,
   updateKnowledgeBase,
+  updateKnowledgeNode,
   updateRunRetention,
   updateSourceRetention,
   type GraphData,
@@ -55,6 +58,8 @@ import {
   type KnowledgeBase,
   type KnowledgeExport,
   type KnowledgeNode,
+  type KnowledgeNodeInput,
+  type KnowledgeNodeUpdate,
   type LearningCard,
   type LearningRun,
   type ModelSettings,
@@ -98,6 +103,7 @@ const nodeTypeLabels: Record<string, string> = {
   base: "知识库",
   concept: "概念",
   keyword: "关键词",
+  method: "方法",
   project: "项目",
   skill: "技能",
   source: "来源",
@@ -232,6 +238,16 @@ const emptyModelForm = {
 };
 type ModelFormState = typeof emptyModelForm;
 
+const nodeTypeOptions = ["keyword", "concept", "skill", "project", "tool", "method"] as const;
+const emptyNodeForm = {
+  name: "",
+  type: "concept",
+  summary: "",
+  aliasesText: "",
+  tagsText: "",
+};
+type NodeFormState = typeof emptyNodeForm;
+
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof BookOpen }> = [
   { key: "learn", label: "学习", icon: BookOpen },
   { key: "graph", label: "知识图谱", icon: Database },
@@ -261,6 +277,8 @@ function App() {
   const [cards, setCards] = useState<LearningCard[]>([]);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
   const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
+  const [nodeForm, setNodeForm] = useState<NodeFormState>(emptyNodeForm);
+  const [isEditingNode, setIsEditingNode] = useState(false);
   const [selectedRun, setSelectedRun] = useState<LearningRun | null>(null);
   const [modelForm, setModelForm] = useState(emptyModelForm);
   const [message, setMessage] = useState<string>("准备就绪");
@@ -328,6 +346,8 @@ function App() {
         setSelectedCardIds([]);
         setKnowledgeBasePrompt(knowledgeBases.find((item) => item.id === activeKnowledgeBaseId)?.learning_prompt ?? "");
         setSelectedNode(null);
+        setNodeForm(emptyNodeForm);
+        setIsEditingNode(false);
         setSelectedRun(null);
       } catch (error) {
         if (!mounted) return;
@@ -375,6 +395,7 @@ function App() {
     const [runData, graphData] = await Promise.all([fetchRuns(knowledgeBaseId), fetchGraph(knowledgeBaseId)]);
     setRuns(runData);
     setGraph(graphData);
+    syncSelectedNodeFromGraph(graphData);
   }
 
   async function refreshRunAnalysis(run: LearningRun, knowledgeBaseId = activeKnowledgeBaseId) {
@@ -389,7 +410,16 @@ function App() {
     setCards(generatedCards);
     setSelectedCardIds((current) => current.filter((id) => generatedCards.some((card) => card.id === id)));
     setGraph(graphData);
+    syncSelectedNodeFromGraph(graphData);
     setSelectedRun(run);
+  }
+
+  function syncSelectedNodeFromGraph(graphData: GraphData) {
+    if (!selectedNode) return;
+    const refreshedNode = graphData.nodes.find((node) => node.id === selectedNode.id) ?? null;
+    setSelectedNode(refreshedNode);
+    setNodeForm(refreshedNode ? nodeToForm(refreshedNode) : emptyNodeForm);
+    if (!refreshedNode) setIsEditingNode(false);
   }
 
   async function handleSaveModel() {
@@ -696,9 +726,85 @@ function App() {
     try {
       const node = await fetchKnowledgeNode(nodeId, activeKnowledgeBaseId);
       setSelectedNode(node);
+      setNodeForm(nodeToForm(node));
+      setIsEditingNode(false);
       setMessage(`已选择节点：${node.name}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加载节点详情失败");
+    }
+  }
+
+  function handleStartNewNode() {
+    setSelectedNode(null);
+    setNodeForm(emptyNodeForm);
+    setIsEditingNode(true);
+    setMessage("正在新建关键点");
+  }
+
+  function handleEditNode() {
+    if (!selectedNode) return;
+    setNodeForm(nodeToForm(selectedNode));
+    setIsEditingNode(true);
+  }
+
+  function handleCancelNodeEdit() {
+    setNodeForm(selectedNode ? nodeToForm(selectedNode) : emptyNodeForm);
+    setIsEditingNode(false);
+  }
+
+  function handleNodeFormChange(patch: Partial<NodeFormState>) {
+    setNodeForm((current) => ({ ...current, ...patch }));
+  }
+
+  async function handleSaveNode() {
+    if (!activeKnowledgeBaseId) {
+      setMessage("请先创建或选择知识库");
+      return;
+    }
+    if (!nodeForm.name.trim()) {
+      setMessage("请输入关键点名称");
+      return;
+    }
+    const editingNode = selectedNode;
+    setBusy(true);
+    setMessage(editingNode ? "正在保存关键点..." : "正在创建关键点...");
+    try {
+      const payload = nodeFormToPayload(nodeForm);
+      const saved = editingNode
+        ? await updateKnowledgeNode(editingNode.id, payload, activeKnowledgeBaseId)
+        : await createKnowledgeNode(nodeFormToInput(nodeForm, activeKnowledgeBaseId));
+      const graphData = await fetchGraph(activeKnowledgeBaseId);
+      const refreshedNode = graphData.nodes.find((node) => node.id === saved.id) ?? saved;
+      setGraph(graphData);
+      setSelectedNode(refreshedNode);
+      setNodeForm(nodeToForm(refreshedNode));
+      setIsEditingNode(false);
+      setMessage(editingNode ? `已更新关键点：${saved.name}` : `已创建关键点：${saved.name}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存关键点失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteNode() {
+    if (!selectedNode || !activeKnowledgeBaseId) return;
+    const node = selectedNode;
+    if (!window.confirm(`确定删除关键点「${node.name}」及其相关关系吗？`)) return;
+    setBusy(true);
+    setMessage("正在删除关键点...");
+    try {
+      await deleteKnowledgeNode(node.id, activeKnowledgeBaseId);
+      const graphData = await fetchGraph(activeKnowledgeBaseId);
+      setGraph(graphData);
+      setSelectedNode(null);
+      setNodeForm(emptyNodeForm);
+      setIsEditingNode(false);
+      setMessage(`已删除关键点：${node.name}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "删除关键点失败");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -909,9 +1015,18 @@ function App() {
         {activeView === "graph" ? (
           <section className="single-view" aria-label="知识图谱工作区">
             <GraphPanel
+              busy={busy}
               graph={graph}
+              isEditingNode={isEditingNode}
               knowledgeBaseName={activeKnowledgeBase ? knowledgeBaseName(activeKnowledgeBase) : "当前知识库"}
+              nodeForm={nodeForm}
+              onCancelNodeEdit={handleCancelNodeEdit}
+              onDeleteNode={handleDeleteNode}
+              onEditNode={handleEditNode}
+              onNodeFormChange={handleNodeFormChange}
+              onSaveNode={handleSaveNode}
               onSelectNode={handleSelectNode}
+              onStartNewNode={handleStartNewNode}
               selectedNode={selectedNode}
             />
           </section>
@@ -1301,31 +1416,44 @@ function AnalysisModelConfig({
 }
 
 function GraphPanel({
+  busy,
   graph,
+  isEditingNode,
   knowledgeBaseName,
+  nodeForm,
+  onCancelNodeEdit,
+  onDeleteNode,
+  onEditNode,
+  onNodeFormChange,
+  onSaveNode,
   onSelectNode,
+  onStartNewNode,
   selectedNode,
 }: {
+  busy: boolean;
   graph: GraphData;
+  isEditingNode: boolean;
   knowledgeBaseName: string;
+  nodeForm: NodeFormState;
+  onCancelNodeEdit: () => void;
+  onDeleteNode: () => void;
+  onEditNode: () => void;
+  onNodeFormChange: (patch: Partial<NodeFormState>) => void;
+  onSaveNode: () => void;
   onSelectNode: (nodeId: number) => void;
+  onStartNewNode: () => void;
   selectedNode: KnowledgeNode | null;
 }) {
-  const sampleNodes = graph.nodes.slice(0, 4);
-  const displayNodes =
-    sampleNodes.length > 0
-      ? sampleNodes.map((node, index) => ({
-          className: ["node-keyword", "node-concept", "node-skill", "node-project"][index] ?? "node-concept",
-          id: node.id,
-          label: node.name,
-          type: node.type,
-        }))
-      : [
-          { className: "node-keyword", id: 0, label: knowledgeBaseName, type: "base" },
-          { className: "node-concept", id: 0, label: "基础", type: "concept" },
-          { className: "node-skill", id: 0, label: "技能", type: "skill" },
-          { className: "node-project", id: 0, label: "项目", type: "project" },
-        ];
+  const layout = buildGraphLayout(graph);
+  const relatedEdges = selectedNode ? relatedEdgesForNode(graph, selectedNode.id) : [];
+  const selectedNodeIds = new Set<number>();
+  if (selectedNode) {
+    selectedNodeIds.add(selectedNode.id);
+    relatedEdges.forEach((edge) => {
+      selectedNodeIds.add(edge.source_node_id);
+      selectedNodeIds.add(edge.target_node_id);
+    });
+  }
 
   return (
     <div className="panel graph-panel">
@@ -1334,46 +1462,200 @@ function GraphPanel({
           <p className="eyebrow">知识图谱</p>
           <h2>知识关系</h2>
         </div>
-        <GitBranch size={19} />
+        <div className="panel-actions">
+          <button className="secondary-button" type="button" onClick={onStartNewNode} disabled={busy}>
+            <CirclePlus size={16} />
+            <span>新建关键点</span>
+          </button>
+          <GitBranch size={19} />
+        </div>
       </div>
       <div className="graph-summary">
         <span>{graph.nodes.length} 个节点</span>
         <span>{graph.edges.length} 条关系</span>
         <span>{knowledgeBaseName}</span>
       </div>
-      <div className="graph-canvas" aria-label="知识图谱预览">
-        {displayNodes.map((node) => (
-          <button
-            className={`node ${node.className} ${selectedNode?.id === node.id ? "selected" : ""}`}
-            disabled={node.id === 0}
-            key={`${node.className}-${node.label}`}
-            onClick={() => onSelectNode(node.id)}
-            type="button"
-          >
-            {node.label}
-          </button>
-        ))}
-        <div className="edge edge-a" />
-        <div className="edge edge-b" />
-        <div className="edge edge-c" />
+      <div className="graph-workbench">
+        <div className="graph-canvas" aria-label="知识图谱固定视图">
+          {layout.nodes.length === 0 ? (
+            <div className="graph-empty">
+              <strong>{knowledgeBaseName}</strong>
+              <span>暂无关键点</span>
+              <button className="secondary-button" type="button" onClick={onStartNewNode} disabled={busy}>
+                <CirclePlus size={16} />
+                <span>新建关键点</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              <svg className="graph-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                {layout.edges.map((edge) => {
+                  const active = selectedNode
+                    ? edge.source_node_id === selectedNode.id || edge.target_node_id === selectedNode.id
+                    : false;
+                  return (
+                    <line
+                      className={active ? "graph-link active" : "graph-link"}
+                      key={edge.id}
+                      x1={edge.x1}
+                      y1={edge.y1}
+                      x2={edge.x2}
+                      y2={edge.y2}
+                    />
+                  );
+                })}
+              </svg>
+              {layout.nodes.map((item) => (
+                <button
+                  aria-label={item.node.name}
+                  className={`node graph-node node-${nodeVisualType(item.node.type)} ${
+                    selectedNode?.id === item.node.id ? "selected" : ""
+                  } ${selectedNode && !selectedNodeIds.has(item.node.id) ? "dimmed" : ""}`}
+                  key={item.node.id}
+                  onClick={() => onSelectNode(item.node.id)}
+                  style={{ left: `${item.x}%`, top: `${item.y}%` }}
+                  type="button"
+                >
+                  <span>{item.node.name}</span>
+                  <small>{nodeTypeLabel(item.node.type)}</small>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+        <div className="node-detail">
+          {isEditingNode ? (
+            <NodeEditor
+              busy={busy}
+              nodeForm={nodeForm}
+              onCancel={onCancelNodeEdit}
+              onChange={onNodeFormChange}
+              onSave={onSaveNode}
+              selectedNode={selectedNode}
+            />
+          ) : selectedNode ? (
+            <>
+              <div className="node-detail-header">
+                <div>
+                  <p className="eyebrow">{nodeTypeLabel(selectedNode.type)}</p>
+                  <h3>{selectedNode.name}</h3>
+                </div>
+                <div className="panel-actions">
+                  <button className="icon-action" type="button" onClick={onEditNode} disabled={busy} aria-label="编辑关键点">
+                    <SlidersHorizontal size={16} />
+                  </button>
+                  <button className="icon-action danger" type="button" onClick={onDeleteNode} disabled={busy} aria-label="删除关键点">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+              <p>{selectedNode.summary || "暂无摘要。"}</p>
+              <dl className="node-meta-list">
+                <div>
+                  <dt>相关关系</dt>
+                  <dd>{relatedEdges.length}</dd>
+                </div>
+                <div>
+                  <dt>别名</dt>
+                  <dd>{selectedNode.aliases.length === 0 ? "暂无" : selectedNode.aliases.join("、")}</dd>
+                </div>
+              </dl>
+              <div className="tag-row">
+                {selectedNode.tags.length === 0
+                  ? <span>暂无标签</span>
+                  : selectedNode.tags.map((tag) => <span key={tag}>{tagLabel(tag)}</span>)}
+              </div>
+            </>
+          ) : (
+            <div className="node-empty-detail">
+              <p className="empty-state compact">选择一个关键点查看相关内容，或新建一个关键点。</p>
+              <button className="secondary-button" type="button" onClick={onStartNewNode} disabled={busy}>
+                <CirclePlus size={16} />
+                <span>新建关键点</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="node-detail">
-        {selectedNode ? (
-          <>
-            <div>
-              <p className="eyebrow">{nodeTypeLabel(selectedNode.type)}</p>
-              <h3>{selectedNode.name}</h3>
-            </div>
-            <p>{selectedNode.summary || "暂无摘要。"}</p>
-            <div className="tag-row">
-              {selectedNode.tags.length === 0
-                ? <span>暂无标签</span>
-                : selectedNode.tags.map((tag) => <span key={tag}>{tagLabel(tag)}</span>)}
-            </div>
-          </>
-        ) : (
-          <p className="empty-state compact">选择一个图谱节点查看详情。</p>
-        )}
+    </div>
+  );
+}
+
+function NodeEditor({
+  busy,
+  nodeForm,
+  onCancel,
+  onChange,
+  onSave,
+  selectedNode,
+}: {
+  busy: boolean;
+  nodeForm: NodeFormState;
+  onCancel: () => void;
+  onChange: (patch: Partial<NodeFormState>) => void;
+  onSave: () => void;
+  selectedNode: KnowledgeNode | null;
+}) {
+  return (
+    <div className="node-editor">
+      <div>
+        <p className="eyebrow">{selectedNode ? "编辑关键点" : "新建关键点"}</p>
+        <h3>{selectedNode ? selectedNode.name : "关键点信息"}</h3>
+      </div>
+      <label>
+        <span>名称</span>
+        <input
+          aria-label="关键点名称"
+          value={nodeForm.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+          placeholder="例如：向量检索"
+        />
+      </label>
+      <label>
+        <span>类型</span>
+        <select
+          aria-label="关键点类型"
+          value={nodeForm.type}
+          onChange={(event) => onChange({ type: event.target.value })}
+        >
+          {nodeTypeOptions.map((type) => (
+            <option key={type} value={type}>{nodeTypeLabel(type)}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span>摘要</span>
+        <textarea
+          aria-label="关键点摘要"
+          value={nodeForm.summary}
+          onChange={(event) => onChange({ summary: event.target.value })}
+          placeholder="写下这个关键点的学习价值、使用场景或注意事项"
+        />
+      </label>
+      <label>
+        <span>别名</span>
+        <input
+          aria-label="关键点别名"
+          value={nodeForm.aliasesText}
+          onChange={(event) => onChange({ aliasesText: event.target.value })}
+          placeholder="多个别名用逗号分隔"
+        />
+      </label>
+      <label>
+        <span>标签</span>
+        <input
+          aria-label="关键点标签"
+          value={nodeForm.tagsText}
+          onChange={(event) => onChange({ tagsText: event.target.value })}
+          placeholder="多个标签用逗号分隔"
+        />
+      </label>
+      <div className="node-editor-actions">
+        <button className="secondary-button" type="button" onClick={onCancel} disabled={busy}>取消</button>
+        <button className="secondary-button primary-action" type="button" onClick={onSave} disabled={busy}>
+          <Save size={16} />
+          <span>保存关键点</span>
+        </button>
       </div>
     </div>
   );
@@ -1932,6 +2214,13 @@ function nodeTypeLabel(type: string) {
   return nodeTypeLabels[type] ?? type;
 }
 
+function nodeVisualType(type: string) {
+  if (type === "keyword") return "keyword";
+  if (type === "skill" || type === "tool" || type === "method") return "skill";
+  if (type === "project") return "project";
+  return "concept";
+}
+
 function cardTypeLabel(type: string) {
   return cardTypeLabels[type] ?? type;
 }
@@ -1949,6 +2238,82 @@ function toModelInput(modelForm: ModelFormState): ModelSettingsInput {
     ...modelForm,
     api_key: modelForm.api_key || undefined,
   };
+}
+
+function nodeToForm(node: KnowledgeNode): NodeFormState {
+  return {
+    name: node.name,
+    type: node.type,
+    summary: node.summary ?? "",
+    aliasesText: node.aliases.join("，"),
+    tagsText: node.tags.join("，"),
+  };
+}
+
+function nodeFormToPayload(nodeForm: NodeFormState): KnowledgeNodeUpdate {
+  return {
+    type: nodeForm.type,
+    name: nodeForm.name.trim(),
+    summary: nodeForm.summary.trim() || null,
+    aliases: splitTextList(nodeForm.aliasesText),
+    tags: splitTextList(nodeForm.tagsText),
+  };
+}
+
+function nodeFormToInput(nodeForm: NodeFormState, knowledgeBaseId: number): KnowledgeNodeInput {
+  return {
+    knowledge_base_id: knowledgeBaseId,
+    type: nodeForm.type,
+    name: nodeForm.name.trim(),
+    summary: nodeForm.summary.trim() || null,
+    aliases: splitTextList(nodeForm.aliasesText),
+    tags: splitTextList(nodeForm.tagsText),
+  };
+}
+
+function splitTextList(value: string): string[] {
+  const seen = new Set<string>();
+  return value
+    .split(/[，,]/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function buildGraphLayout(graph: GraphData) {
+  const nodes = graph.nodes.map((node, index) => {
+    if (graph.nodes.length === 1) {
+      return { node, x: 50, y: 50 };
+    }
+    const columns = Math.min(4, Math.ceil(Math.sqrt(graph.nodes.length)));
+    const rows = Math.ceil(graph.nodes.length / columns);
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = columns === 1 ? 50 : 16 + column * (68 / Math.max(columns - 1, 1));
+    const y = rows === 1 ? 50 : 18 + row * (64 / Math.max(rows - 1, 1));
+    const offset = row % 2 === 1 ? Math.min(6, 18 / columns) : 0;
+    return {
+      node,
+      x: Math.max(10, Math.min(90, x + offset)),
+      y,
+    };
+  });
+  const nodeMap = new Map(nodes.map((item) => [item.node.id, item]));
+  const edges = graph.edges.flatMap((edge) => {
+    const source = nodeMap.get(edge.source_node_id);
+    const target = nodeMap.get(edge.target_node_id);
+    if (!source || !target) return [];
+    return [{ ...edge, x1: source.x, y1: source.y, x2: target.x, y2: target.y }];
+  });
+  return { nodes, edges };
+}
+
+function relatedEdgesForNode(graph: GraphData, nodeId: number) {
+  return graph.edges.filter((edge) => edge.source_node_id === nodeId || edge.target_node_id === nodeId);
 }
 
 function analysisModeLabel(cards: LearningCard[], modelSettings: ModelSettings | null): string {

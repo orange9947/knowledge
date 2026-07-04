@@ -18,7 +18,9 @@ from app.schemas import (
     KnowledgeBaseRead,
     KnowledgeBaseUpdate,
     KnowledgeExport,
+    KnowledgeNodeCreate,
     KnowledgeNodeRead,
+    KnowledgeNodeUpdate,
     LearningRunCreate,
     LearningRunRead,
     ModelConfigRead,
@@ -347,6 +349,14 @@ def get_knowledge_graph(knowledge_base_id: int | None = None, session: Session =
     return GraphRead(nodes=nodes, edges=edges)
 
 
+@app.post("/knowledge/nodes", response_model=KnowledgeNodeRead, status_code=201)
+def create_knowledge_node(payload: KnowledgeNodeCreate, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    if repository.get_knowledge_base(payload.knowledge_base_id) is None:
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
+    return repository.create_node(payload)
+
+
 @app.get("/knowledge/nodes/{node_id}", response_model=KnowledgeNodeRead)
 def get_knowledge_node(
     node_id: int,
@@ -360,6 +370,41 @@ def get_knowledge_node(
     if knowledge_base_id is not None and node.knowledge_base_id != knowledge_base_id:
         raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
     return node
+
+
+@app.patch("/knowledge/nodes/{node_id}", response_model=KnowledgeNodeRead)
+def update_knowledge_node(
+    node_id: int,
+    payload: KnowledgeNodeUpdate,
+    knowledge_base_id: int | None = None,
+    session: Session = Depends(get_session),
+):
+    repository = KnowledgeRepository(session)
+    node = repository.get_node(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
+    if knowledge_base_id is not None and node.knowledge_base_id != knowledge_base_id:
+        raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
+    try:
+        return repository.update_node(node, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/knowledge/nodes/{node_id}", status_code=204)
+def delete_knowledge_node(
+    node_id: int,
+    knowledge_base_id: int | None = None,
+    session: Session = Depends(get_session),
+):
+    repository = KnowledgeRepository(session)
+    node = repository.get_node(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
+    if knowledge_base_id is not None and node.knowledge_base_id != knowledge_base_id:
+        raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
+    repository.delete_node(node)
+    return None
 
 
 @app.get("/knowledge/search", response_model=list[KnowledgeNodeRead])

@@ -2,8 +2,10 @@ import re
 from collections.abc import Iterable
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app import models
 from app.defaults import default_source_configs
@@ -13,6 +15,7 @@ from app.schemas import (
     KnowledgeBaseCreate,
     KnowledgeBaseUpdate,
     KnowledgeNodeCreate,
+    KnowledgeNodeUpdate,
     LearningRunCreate,
     ModelConfigWrite,
     SourceConfigWrite,
@@ -376,6 +379,74 @@ class KnowledgeRepository:
         self.session.refresh(node)
         return node
 
+    def create_node(self, payload: KnowledgeNodeCreate) -> models.KnowledgeNode:
+        node = models.KnowledgeNode(
+            knowledge_base_id=payload.knowledge_base_id,
+            type=payload.type.strip(),
+            name=payload.name.strip(),
+            normalized_name=normalize_name(payload.name),
+            summary=_clean_optional_text(payload.summary),
+            aliases=_clean_text_list(payload.aliases),
+            tags=_clean_text_list(payload.tags),
+        )
+        self.session.add(node)
+        try:
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            existing = self._find_node_by_identity(node.knowledge_base_id, node.type, node.normalized_name)
+            if existing is None:
+                raise
+            return existing
+        self.session.refresh(node)
+        return node
+
+    def update_node(self, node: models.KnowledgeNode, payload: KnowledgeNodeUpdate) -> models.KnowledgeNode:
+        changed_fields = payload.model_fields_set
+        if "type" in changed_fields and payload.type is not None:
+            node.type = payload.type.strip()
+        if "name" in changed_fields and payload.name is not None:
+            node.name = payload.name.strip()
+            node.normalized_name = normalize_name(payload.name)
+        if "summary" in changed_fields:
+            node.summary = _clean_optional_text(payload.summary)
+        if "aliases" in changed_fields:
+            node.aliases = _clean_text_list(payload.aliases or [])
+        if "tags" in changed_fields:
+            node.tags = _clean_text_list(payload.tags or [])
+        try:
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            raise ValueError("同一知识库中已存在同类型同名关键点") from None
+        self.session.refresh(node)
+        return node
+
+    def delete_node(self, node: models.KnowledgeNode) -> None:
+        node_id = node.id
+        for edge in list(
+            self.session.scalars(
+                select(models.KnowledgeEdge).where(
+                    or_(
+                        models.KnowledgeEdge.source_node_id == node_id,
+                        models.KnowledgeEdge.target_node_id == node_id,
+                    )
+                )
+            )
+        ):
+            self.session.delete(edge)
+        cards_statement = select(models.Card).join(models.LearningRun).where(
+            models.LearningRun.knowledge_base_id == node.knowledge_base_id
+        )
+        for card in self.session.scalars(cards_statement):
+            node_ids = card.node_ids or []
+            if node_id not in node_ids:
+                continue
+            card.node_ids = [item for item in node_ids if item != node_id]
+            flag_modified(card, "node_ids")
+        self.session.delete(node)
+        self.session.commit()
+
     def add_edge(self, payload: KnowledgeEdgeCreate) -> models.KnowledgeEdge:
         statement = select(models.KnowledgeEdge).where(
             models.KnowledgeEdge.knowledge_base_id == payload.knowledge_base_id,
@@ -396,6 +467,19 @@ class KnowledgeRepository:
 
     def get_node(self, node_id: int) -> models.KnowledgeNode | None:
         return self.session.get(models.KnowledgeNode, node_id)
+
+    def _find_node_by_identity(
+        self,
+        knowledge_base_id: int,
+        node_type: str,
+        normalized_name: str,
+    ) -> models.KnowledgeNode | None:
+        statement = select(models.KnowledgeNode).where(
+            models.KnowledgeNode.knowledge_base_id == knowledge_base_id,
+            models.KnowledgeNode.type == node_type,
+            models.KnowledgeNode.normalized_name == normalized_name,
+        )
+        return self.session.scalar(statement)
 
     def search_nodes(
         self,
@@ -533,3 +617,16 @@ def _clean_optional_text(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _clean_text_list(values: Iterable[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = value.strip()
+        key = normalize_name(item)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+    return cleaned

@@ -63,6 +63,17 @@ export type KnowledgeNode = {
   tags: string[];
 };
 
+export type KnowledgeNodeInput = {
+  knowledge_base_id: number;
+  type: string;
+  name: string;
+  summary?: string | null;
+  aliases?: string[];
+  tags?: string[];
+};
+
+export type KnowledgeNodeUpdate = Partial<Omit<KnowledgeNodeInput, "knowledge_base_id">>;
+
 export type GraphData = {
   nodes: KnowledgeNode[];
   edges: Array<{
@@ -326,6 +337,30 @@ export async function fetchGraph(knowledgeBaseId?: number | null): Promise<Graph
 
 export async function fetchKnowledgeNode(nodeId: number, knowledgeBaseId?: number | null): Promise<KnowledgeNode> {
   return request<KnowledgeNode>(withKnowledgeBase(`/knowledge/nodes/${nodeId}`, knowledgeBaseId));
+}
+
+export async function createKnowledgeNode(payload: KnowledgeNodeInput): Promise<KnowledgeNode> {
+  return request<KnowledgeNode>("/knowledge/nodes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateKnowledgeNode(
+  nodeId: number,
+  payload: KnowledgeNodeUpdate,
+  knowledgeBaseId?: number | null,
+): Promise<KnowledgeNode> {
+  return request<KnowledgeNode>(withKnowledgeBase(`/knowledge/nodes/${nodeId}`, knowledgeBaseId), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteKnowledgeNode(nodeId: number, knowledgeBaseId?: number | null): Promise<void> {
+  return request<void>(withKnowledgeBase(`/knowledge/nodes/${nodeId}`, knowledgeBaseId), {
+    method: "DELETE",
+  });
 }
 
 export async function searchKnowledge(
