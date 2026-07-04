@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   BookOpen,
   Database,
+  Download,
   GitBranch,
   History,
+  Upload,
   KeyRound,
   Play,
   Save,
@@ -17,15 +19,20 @@ import {
 import {
   collectRun,
   createRun,
+  exportKnowledge,
+  fetchGraph,
   fetchHealth,
   fetchModelSettings,
   fetchRunCards,
   fetchRunSources,
   fetchRuns,
   fetchSourceSettings,
+  importKnowledge,
   saveModelSettings,
   saveSourceSettings,
   type HealthResponse,
+  type GraphData,
+  type KnowledgeExport,
   type LearningCard,
   type LearningRun,
   type ModelSettings,
@@ -116,6 +123,7 @@ function App() {
   const [sources, setSources] = useState<SourceSettings[]>([]);
   const [runSources, setRunSources] = useState<SourceRecord[]>([]);
   const [cards, setCards] = useState<LearningCard[]>([]);
+  const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
   const [modelForm, setModelForm] = useState(emptyModelForm);
   const [message, setMessage] = useState<string>("Ready");
   const [busy, setBusy] = useState(false);
@@ -125,11 +133,12 @@ function App() {
 
     async function loadInitialData() {
       try {
-        const [healthData, modelData, sourceData, runData] = await Promise.all([
+        const [healthData, modelData, sourceData, runData, graphData] = await Promise.all([
           fetchHealth(),
           fetchModelSettings(),
           fetchSourceSettings(),
           fetchRuns(),
+          fetchGraph(),
         ]);
         if (!mounted) return;
         setHealth(healthData);
@@ -147,6 +156,7 @@ function App() {
         }
         setSources(sourceData);
         setRuns(runData);
+        setGraph(graphData);
       } catch (error) {
         if (!mounted) return;
         setHealth(null);
@@ -218,13 +228,55 @@ function App() {
       const collected = await collectRun(run.id);
       const collectedSources = await fetchRunSources(run.id);
       const generatedCards = await fetchRunCards(run.id);
+      const graphData = await fetchGraph();
       setRuns((current) => current.map((item) => (item.id === collected.id ? collected : item)));
       setRunSources(collectedSources);
       setCards(generatedCards);
+      setGraph(graphData);
       setMessage(`Run #${run.id} ${collected.status}; ${collectedSources.length} source records`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to create run");
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleExport() {
+    setBusy(true);
+    setMessage("Exporting knowledge JSON...");
+    try {
+      const payload = await exportKnowledge();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `knowledge-export-v${payload.version}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage(`Exported ${payload.runs.length} runs and ${payload.nodes.length} nodes`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to export knowledge");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setMessage("Importing knowledge JSON...");
+    try {
+      const payload = JSON.parse(await file.text()) as KnowledgeExport;
+      const imported = await importKnowledge(payload);
+      const [runData, graphData] = await Promise.all([fetchRuns(), fetchGraph()]);
+      setRuns(runData);
+      setGraph(graphData);
+      setMessage(`Imported ${imported.runs.length} total runs and ${imported.nodes.length} nodes`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to import knowledge");
+    } finally {
+      event.target.value = "";
       setBusy(false);
     }
   }
@@ -329,6 +381,10 @@ function App() {
               </div>
               <GitBranch size={19} />
             </div>
+            <div className="graph-summary">
+              <span>{graph.nodes.length} nodes</span>
+              <span>{graph.edges.length} edges</span>
+            </div>
             <div className="graph-canvas" aria-label="Knowledge graph preview">
               <div className="node node-keyword">AI Agent</div>
               <div className="node node-concept">RAG</div>
@@ -432,7 +488,15 @@ function App() {
                 <p className="eyebrow">History</p>
                 <h2>运行记录</h2>
               </div>
-              <History size={19} />
+              <div className="panel-actions">
+                <button className="icon-action" type="button" onClick={handleExport} disabled={busy} aria-label="Export">
+                  <Download size={17} />
+                </button>
+                <label className="icon-action file-action" aria-label="Import">
+                  <Upload size={17} />
+                  <input type="file" accept="application/json" onChange={handleImport} disabled={busy} />
+                </label>
+              </div>
             </div>
             <div className="run-list">
               {runs.length === 0 ? (

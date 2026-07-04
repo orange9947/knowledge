@@ -208,6 +208,12 @@ class KnowledgeRepository:
         edges = list(self.session.scalars(select(models.KnowledgeEdge).order_by(models.KnowledgeEdge.id.asc())))
         return nodes, edges
 
+    def list_all_sources(self) -> list[models.Source]:
+        return list(self.session.scalars(select(models.Source).order_by(models.Source.id.asc())))
+
+    def list_all_cards(self) -> list[models.Card]:
+        return list(self.session.scalars(select(models.Card).order_by(models.Card.id.asc())))
+
     def _sync_source_count(self, run_id: int) -> None:
         run = self.session.get(models.LearningRun, run_id)
         if run is None:

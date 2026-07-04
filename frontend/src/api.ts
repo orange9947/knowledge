@@ -46,6 +46,20 @@ export type LearningCard = {
   sort_order: number;
 };
 
+export type GraphData = {
+  nodes: Array<{ id: number; type: string; name: string }>;
+  edges: Array<{ id: number; type: string; source_node_id: number; target_node_id: number }>;
+};
+
+export type KnowledgeExport = {
+  version: number;
+  runs: LearningRun[];
+  sources: SourceRecord[];
+  cards: LearningCard[];
+  nodes: GraphData["nodes"];
+  edges: GraphData["edges"];
+};
+
 export type ModelSettings = {
   id: number;
   name: string;
@@ -143,4 +157,19 @@ export async function fetchRunSources(runId: number): Promise<SourceRecord[]> {
 
 export async function fetchRunCards(runId: number): Promise<LearningCard[]> {
   return request<LearningCard[]>(`/runs/${runId}/cards`);
+}
+
+export async function fetchGraph(): Promise<GraphData> {
+  return request<GraphData>("/knowledge/graph");
+}
+
+export async function exportKnowledge(): Promise<KnowledgeExport> {
+  return request<KnowledgeExport>("/export");
+}
+
+export async function importKnowledge(payload: KnowledgeExport): Promise<KnowledgeExport> {
+  return request<KnowledgeExport>("/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

@@ -182,3 +182,12 @@ class KnowledgeEdgeRead(BaseModel):
 class GraphRead(BaseModel):
     nodes: list[KnowledgeNodeRead]
     edges: list[KnowledgeEdgeRead]
+
+
+class KnowledgeExport(BaseModel):
+    version: int = 1
+    runs: list[LearningRunRead]
+    sources: list[SourceRead]
+    cards: list[CardRead]
+    nodes: list[KnowledgeNodeRead]
+    edges: list[KnowledgeEdgeRead]

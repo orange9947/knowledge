@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_session, init_db
+from app.portable import export_knowledge, import_knowledge
 from app.repositories import KnowledgeRepository
 from app.schemas import (
     CardRead,
     GraphRead,
     HealthResponse,
+    KnowledgeExport,
     LearningRunCreate,
     LearningRunRead,
     ModelConfigRead,
@@ -127,3 +129,13 @@ def list_run_cards(run_id: int, session: Session = Depends(get_session)):
 def get_knowledge_graph(session: Session = Depends(get_session)):
     nodes, edges = KnowledgeRepository(session).list_graph()
     return GraphRead(nodes=nodes, edges=edges)
+
+
+@app.get("/export", response_model=KnowledgeExport)
+def export_data(session: Session = Depends(get_session)):
+    return export_knowledge(KnowledgeRepository(session))
+
+
+@app.post("/import", response_model=KnowledgeExport)
+def import_data(payload: KnowledgeExport, session: Session = Depends(get_session)):
+    return import_knowledge(KnowledgeRepository(session), payload)

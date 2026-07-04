@@ -337,7 +337,7 @@ h3 {
 .graph-canvas {
   position: relative;
   height: 360px;
-  margin: 16px;
+  margin: 10px 16px 16px;
   overflow: hidden;
   border-radius: 8px;
   border: 1px solid #d8e3dd;
@@ -345,6 +345,22 @@ h3 {
     radial-gradient(circle at 18px 18px, rgba(18, 24, 21, 0.09) 1px, transparent 1.5px),
     #f8faf8;
   background-size: 28px 28px;
+}
+
+.graph-summary {
+  padding: 12px 16px 0;
+  display: flex;
+  gap: 10px;
+}
+
+.graph-summary span {
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  color: var(--green-dark);
+  background: rgba(26, 143, 114, 0.1);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .node {
@@ -510,6 +526,25 @@ h3 {
   border-radius: 8px;
   color: var(--ink);
   background: var(--paper);
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-action {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-action input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .settings-form {

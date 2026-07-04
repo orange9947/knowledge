@@ -30,6 +30,12 @@ describe("App", () => {
             json: async () => null,
           });
         }
+        if (url.endsWith("/knowledge/graph")) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ nodes: [], edges: [] }),
+          });
+        }
         if (
           url.endsWith("/settings/sources") ||
           url.endsWith("/runs") ||
