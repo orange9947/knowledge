@@ -51,7 +51,7 @@ The frontend runs on `http://localhost:5173` and proxies API calls to `http://lo
 4. Click `Run`.
 5. Review learning cards, captured sources, graph nodes, and history.
 
-The first run works without saving source settings because the backend seeds default sources. Settings can still replace those sources with custom RSS feeds, domains, entry URLs, or search pages.
+The first run works without saving source settings because the backend seeds default sources. Settings can add, edit, disable, reset, or save custom RSS feeds, domains, entry URLs, and search pages.
 
 ## Source Behavior
 

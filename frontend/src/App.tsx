@@ -15,6 +15,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -51,6 +52,7 @@ import {
 
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
+type SourceDraft = SourceSettingsInput & { id: number };
 
 const learningCards = [
   {
@@ -163,6 +165,7 @@ function App() {
   const [runs, setRuns] = useState<LearningRun[]>([]);
   const [modelSettings, setModelSettings] = useState<ModelSettings | null>(null);
   const [sources, setSources] = useState<SourceSettings[]>([]);
+  const [sourceDrafts, setSourceDrafts] = useState<SourceDraft[]>([]);
   const [runSources, setRunSources] = useState<SourceRecord[]>([]);
   const [cards, setCards] = useState<LearningCard[]>([]);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
@@ -189,6 +192,7 @@ function App() {
         setHealthError(null);
         setModelSettings(modelData);
         setSources(sourceData);
+        setSourceDrafts(toSourceDrafts(sourceData));
         setKnowledgeBases(bases);
         setActiveKnowledgeBaseId(selectedBase?.id ?? null);
         if (modelData) {
@@ -296,16 +300,48 @@ function App() {
 
   async function handleSaveDefaultSources() {
     setBusy(true);
-    setMessage("Saving source defaults...");
+    setMessage("Saving source settings...");
     try {
-      const saved = await saveSourceSettings(defaultSources);
+      const payload = sourceDrafts.length > 0 ? sourceDrafts.map(toSourceInput) : defaultSources;
+      const saved = await saveSourceSettings(payload);
       setSources(saved);
-      setMessage("Source settings saved");
+      setSourceDrafts(toSourceDrafts(saved));
+      setMessage(`Saved ${saved.length} source settings`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to save source settings");
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleAddSource() {
+    const nextId = Math.min(0, ...sourceDrafts.map((source) => source.id)) - 1;
+    setSourceDrafts((current) => [
+      ...current,
+      {
+        id: nextId,
+        name: "Custom RSS",
+        type: "rss",
+        enabled: true,
+        url_or_domain: "",
+        language_hint: null,
+        crawl_depth: 1,
+        rate_limit: null,
+        extractor_rule: null,
+      },
+    ]);
+  }
+
+  function handleRemoveSource(id: number) {
+    setSourceDrafts((current) => current.filter((source) => source.id !== id));
+  }
+
+  function handleResetSources() {
+    setSourceDrafts(defaultSources.map((source, index) => ({ ...source, id: -(index + 1) })));
+  }
+
+  function handleSourceChange(id: number, patch: Partial<SourceDraft>) {
+    setSourceDrafts((current) => current.map((source) => (source.id === id ? { ...source, ...patch } : source)));
   }
 
   async function handleCreateKnowledgeBase() {
@@ -561,7 +597,12 @@ function App() {
             />
             <SourcesPanel
               busy={busy}
+              onAddSource={handleAddSource}
+              onRemoveSource={handleRemoveSource}
+              onResetSources={handleResetSources}
               onSaveDefaultSources={handleSaveDefaultSources}
+              onSourceChange={handleSourceChange}
+              sourceDrafts={sourceDrafts}
               showSaveAction
               sourceRows={sourceRows}
             />
@@ -727,14 +768,24 @@ function GraphPanel({
 
 function SourcesPanel({
   busy,
+  onAddSource,
+  onRemoveSource,
+  onResetSources,
   showSaveAction = true,
+  sourceDrafts = [],
   sourceRows,
   onSaveDefaultSources,
+  onSourceChange,
 }: {
   busy: boolean;
+  onAddSource?: () => void;
+  onRemoveSource?: (id: number) => void;
+  onResetSources?: () => void;
   showSaveAction?: boolean;
+  sourceDrafts?: SourceDraft[];
   sourceRows: Array<{ name: string; status: string; tone: string }>;
   onSaveDefaultSources: () => void;
+  onSourceChange?: (id: number, patch: Partial<SourceDraft>) => void;
 }) {
   return (
     <div className="panel sources-panel">
@@ -744,29 +795,115 @@ function SourcesPanel({
           <h2>来源状态</h2>
         </div>
         {showSaveAction ? (
-          <button
-            className="icon-action"
-            type="button"
-            onClick={onSaveDefaultSources}
-            disabled={busy}
-            aria-label="Save source defaults"
-            title="Save source defaults"
-          >
-            <Save size={18} />
-          </button>
+          <div className="panel-actions">
+            <button
+              className="icon-action"
+              type="button"
+              onClick={onResetSources}
+              disabled={busy}
+              aria-label="Reset source defaults"
+              title="Reset source defaults"
+            >
+              <Database size={18} />
+            </button>
+            <button
+              className="icon-action"
+              type="button"
+              onClick={onAddSource}
+              disabled={busy}
+              aria-label="Add source"
+              title="Add source"
+            >
+              <CirclePlus size={18} />
+            </button>
+            <button
+              className="icon-action"
+              type="button"
+              onClick={onSaveDefaultSources}
+              disabled={busy}
+              aria-label="Save source settings"
+              title="Save source settings"
+            >
+              <Save size={18} />
+            </button>
+          </div>
         ) : (
           <Database size={19} />
         )}
       </div>
-      <div className="source-list">
-        {sourceRows.map((source) => (
-          <div className="source-row" key={source.name}>
-            <span className={`source-dot ${source.tone}`} />
-            <strong>{source.name}</strong>
-            <span>{source.status}</span>
-          </div>
-        ))}
-      </div>
+      {showSaveAction && onSourceChange ? (
+        <div className="source-editor-list">
+          {sourceDrafts.map((source) => (
+            <div className="source-editor-row" key={source.id}>
+              <label>
+                <span>Name</span>
+                <input
+                  aria-label={`Source name ${source.id}`}
+                  value={source.name}
+                  onChange={(event) => onSourceChange(source.id, { name: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>Type</span>
+                <select
+                  aria-label={`Source type ${source.id}`}
+                  value={source.type}
+                  onChange={(event) => onSourceChange(source.id, { type: event.target.value })}
+                >
+                  <option value="builtin">builtin</option>
+                  <option value="rss">rss</option>
+                  <option value="domain">domain</option>
+                  <option value="entry_url">entry_url</option>
+                  <option value="search_page">search_page</option>
+                </select>
+              </label>
+              <label className="source-url-field">
+                <span>URL or domain</span>
+                <input
+                  aria-label={`Source URL ${source.id}`}
+                  value={source.url_or_domain ?? ""}
+                  onChange={(event) => onSourceChange(source.id, { url_or_domain: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>Lang</span>
+                <input
+                  aria-label={`Source language ${source.id}`}
+                  value={source.language_hint ?? ""}
+                  onChange={(event) => onSourceChange(source.id, { language_hint: event.target.value || null })}
+                />
+              </label>
+              <label className="source-enabled">
+                <input
+                  checked={source.enabled}
+                  type="checkbox"
+                  onChange={(event) => onSourceChange(source.id, { enabled: event.target.checked })}
+                />
+                <span>Enabled</span>
+              </label>
+              <button
+                className="icon-action"
+                disabled={busy}
+                onClick={() => onRemoveSource?.(source.id)}
+                type="button"
+                aria-label={`Remove ${source.name}`}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="source-list">
+          {sourceRows.map((source) => (
+            <div className="source-row" key={source.name}>
+              <span className={`source-dot ${source.tone}`} />
+              <strong>{source.name}</strong>
+              <span>{source.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1027,6 +1164,36 @@ function sourceTone(type: string) {
   if (type === "domain") return "amber";
   if (type === "search_page") return "red";
   return "gray";
+}
+
+function toSourceDrafts(sourceSettings: SourceSettings[]): SourceDraft[] {
+  if (sourceSettings.length === 0) {
+    return defaultSources.map((source, index) => ({ ...source, id: -(index + 1) }));
+  }
+  return sourceSettings.map((source) => ({
+    name: source.name,
+    type: source.type,
+    enabled: source.enabled,
+    url_or_domain: source.url_or_domain,
+    language_hint: source.language_hint,
+    crawl_depth: source.crawl_depth,
+    rate_limit: source.rate_limit,
+    extractor_rule: source.extractor_rule,
+    id: source.id,
+  }));
+}
+
+function toSourceInput(source: SourceDraft): SourceSettingsInput {
+  return {
+    name: source.name.trim() || "Untitled source",
+    type: source.type,
+    enabled: source.enabled,
+    url_or_domain: source.url_or_domain?.trim() || null,
+    language_hint: source.language_hint?.trim() || null,
+    crawl_depth: source.crawl_depth,
+    rate_limit: source.rate_limit,
+    extractor_rule: source.extractor_rule,
+  };
 }
 
 export default App;

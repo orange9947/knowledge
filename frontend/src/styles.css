@@ -546,6 +546,7 @@ h3 {
 }
 
 .source-list,
+.source-editor-list,
 .settings-list,
 .run-list,
 .extracted-list {
@@ -569,6 +570,63 @@ h3 {
 .source-row span:last-child,
 .settings-list dd {
   color: var(--muted);
+}
+
+.source-editor-list {
+  display: grid;
+  gap: 10px;
+}
+
+.source-editor-row {
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 128px minmax(180px, 1.4fr) 72px 92px 36px;
+  gap: 8px;
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.source-editor-row label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.source-editor-row label span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.source-editor-row input,
+.source-editor-row select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--paper);
+  outline: 0;
+}
+
+.source-enabled {
+  min-height: 36px;
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 7px !important;
+}
+
+.source-enabled input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
 }
 
 .source-dot {
@@ -986,7 +1044,8 @@ h3 {
   }
 
   .history-filters,
-  .detail-grid {
+  .detail-grid,
+  .source-editor-row {
     grid-template-columns: 1fr;
   }
 
