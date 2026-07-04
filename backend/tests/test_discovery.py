@@ -183,3 +183,29 @@ def test_extract_search_result_links_ignores_site_navigation():
         "https://juejin.cn/post/7440000000000000000",
         "https://dev.to/team/rag-for-apps",
     ]
+
+
+def test_extract_search_result_links_keeps_practical_community_sources():
+    html = """
+    <a href="https://www.zhihu.com/search?type=content&q=RAG">RAG 搜索</a>
+    <a href="https://www.zhihu.com/question/123456789/answer/987654321">RAG 实践问答</a>
+    <a href="https://sspai.com/post/88888">RAG 自动化工作流</a>
+    <a href="https://www.infoq.cn/article/rag-production-guide">RAG 工程实践</a>
+    <a href="https://blog.csdn.net/example/article/details/123456">RAG 部署记录</a>
+    <a href="https://cloud.tencent.com/developer/article/2345678">RAG 云端实践</a>
+    <a href="https://medium.com/example/rag-for-apps-123">RAG for apps</a>
+    <a href="https://www.reddit.com/r/MachineLearning/comments/abc123/rag_in_prod/">RAG in production</a>
+    <a href="https://arxiv.org/abs/2501.12345">RAG paper</a>
+    """
+
+    candidates = extract_search_result_links(html, "https://www.zhihu.com/search?q=RAG", "RAG", "zh")
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.zhihu.com/question/123456789/answer/987654321",
+        "https://sspai.com/post/88888",
+        "https://www.infoq.cn/article/rag-production-guide",
+        "https://blog.csdn.net/example/article/details/123456",
+        "https://cloud.tencent.com/developer/article/2345678",
+        "https://medium.com/example/rag-for-apps-123",
+        "https://www.reddit.com/r/MachineLearning/comments/abc123/rag_in_prod",
+    ]

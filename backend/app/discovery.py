@@ -341,10 +341,24 @@ def _clean_domain(value: str | None) -> str | None:
 def _domain_search_url(domain: str, keyword: str) -> str:
     if "juejin.cn" in domain:
         return f"https://juejin.cn/search?query={keyword}&type=0"
+    if "zhihu.com" in domain:
+        return f"https://www.zhihu.com/search?type=content&q={keyword}"
+    if "sspai.com" in domain:
+        return f"https://sspai.com/search/post/{keyword}"
+    if "infoq.cn" in domain:
+        return f"https://www.infoq.cn/search?keyword={keyword}"
+    if "csdn.net" in domain:
+        return f"https://so.csdn.net/so/search?q={keyword}"
+    if "cloud.tencent.com" in domain:
+        return f"https://cloud.tencent.com/developer/search/article-{keyword}"
     if "dev.to" in domain:
         return f"https://dev.to/search?q={keyword}"
     if "stackoverflow.com" in domain:
         return f"https://stackoverflow.com/search?q={keyword}"
+    if "medium.com" in domain:
+        return f"https://medium.com/search?q={keyword}"
+    if "reddit.com" in domain:
+        return f"https://www.reddit.com/search/?q={keyword}"
     return f"https://www.google.com/search?q=site%3A{domain}+{keyword}"
 
 
@@ -369,6 +383,11 @@ def _is_low_value_site(site: str) -> bool:
         "www.google.com",
         "google.com",
         "hn.algolia.com",
+        "arxiv.org",
+        "www.arxiv.org",
+        "semanticscholar.org",
+        "www.semanticscholar.org",
+        "scholar.google.com",
     }
     return site in blocked
 
@@ -380,6 +399,16 @@ def _looks_like_result_url(url: str) -> bool:
     query = parsed.query.lower()
     if "juejin.cn" in host:
         return path.startswith("/post/") or path.startswith("/book/")
+    if "zhihu.com" in host:
+        return path.startswith("/question/") or path.startswith("/p/")
+    if "sspai.com" in host:
+        return path.startswith("/post/")
+    if "infoq.cn" in host:
+        return path.startswith("/article/") or path.startswith("/news/")
+    if "csdn.net" in host:
+        return "/article/details/" in path
+    if "cloud.tencent.com" in host:
+        return path.startswith("/developer/article/")
     if "dev.to" in host:
         blocked_paths = {"", "/", "/search", "/top/week", "/latest"}
         return path not in blocked_paths and path.count("/") >= 2
@@ -389,6 +418,11 @@ def _looks_like_result_url(url: str) -> bool:
         return path.count("/") >= 2 and not path.startswith("/search")
     if "hn.algolia.com" in host:
         return "story_" in query or "objectid" in query
+    if "medium.com" in host:
+        blocked_paths = {"", "/", "/search", "/tag", "/topics"}
+        return path not in blocked_paths and path.count("/") >= 1
+    if "reddit.com" in host:
+        return "/comments/" in path
     return True
 
 
@@ -403,7 +437,7 @@ def _candidate_rank(candidate: SourceCandidate) -> tuple[int, str]:
         return (0, url)
     if "news.google.com" in site:
         return (1, url)
-    if "/post/" in url or "/questions/" in url:
+    if "/post/" in url or "/questions/" in url or "/article/" in url or "/comments/" in url:
         return (2, url)
     if "search" in url or "hn.algolia.com" in site:
         return (4, url)
