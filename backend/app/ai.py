@@ -40,12 +40,35 @@ class AIOutput(BaseModel):
     edges: list[AIEdge]
 
 
+class AIProviderError(RuntimeError):
+    def __init__(self, message: str, status_code: int = 502):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 @dataclass(frozen=True)
 class Material:
     title: str
     url: str
     site: str | None
     text: str
+
+
+@dataclass(frozen=True)
+class AITarget:
+    url: str
+    title: str | None = None
+    reason: str | None = None
+
+
+class AITargetPayload(BaseModel):
+    url: str
+    title: str | None = None
+    reason: str | None = None
+
+
+class AITargetOutput(BaseModel):
+    targets: list[AITargetPayload] = Field(default_factory=list)
 
 
 class AIOrchestrator:
@@ -58,6 +81,8 @@ class AIOrchestrator:
         keyword: str,
         sources: list[models.Source],
         model_config: models.ModelConfig | None,
+        knowledge_base_prompt: str | None = None,
+        run_prompt: str | None = None,
     ) -> AIOutput:
         materials = _source_materials(sources)
         if not materials:
@@ -66,8 +91,8 @@ class AIOrchestrator:
         api_key = self.secret_store.get(model_config.api_key_reference) if model_config else None
         if model_config and api_key:
             try:
-                return self._generate_with_provider(keyword, materials, model_config, api_key)
-            except (httpx.HTTPError, ValidationError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                return self._generate_with_provider(keyword, materials, model_config, api_key, knowledge_base_prompt, run_prompt)
+            except (AIProviderError, httpx.HTTPError, ValidationError, ValueError, KeyError, TypeError, json.JSONDecodeError):
                 return fallback_output(keyword, materials)
         return fallback_output(keyword, materials)
 
@@ -77,8 +102,75 @@ class AIOrchestrator:
         materials: list[Material],
         model_config: models.ModelConfig,
         api_key: str,
+        knowledge_base_prompt: str | None = None,
+        run_prompt: str | None = None,
     ) -> AIOutput:
-        prompt = _build_prompt(keyword, materials)
+        prompt = _build_prompt(keyword, materials, knowledge_base_prompt, run_prompt)
+        return self._generate_ai_output_with_prompt(prompt, model_config, api_key)
+
+    def summarize_run(
+        self,
+        keyword: str,
+        sources: list[models.Source],
+        history_cards: list[models.Card],
+        history_nodes: list[models.KnowledgeNode],
+        model_config: models.ModelConfig | None,
+        knowledge_base_prompt: str | None = None,
+        run_prompt: str | None = None,
+    ) -> AIOutput:
+        materials = _source_materials(sources)
+        if not materials:
+            raise ValueError("没有可总结的素材正文")
+        api_key = self._require_api_key(model_config)
+        prompt = _build_summary_prompt(keyword, materials, history_cards, history_nodes, knowledge_base_prompt, run_prompt)
+        return self._generate_ai_output_with_prompt(prompt, model_config, api_key)
+
+    def suggest_collection_targets(
+        self,
+        keyword: str,
+        history_cards: list[models.Card],
+        history_nodes: list[models.KnowledgeNode],
+        model_config: models.ModelConfig | None,
+        knowledge_base_prompt: str | None = None,
+        run_prompt: str | None = None,
+    ) -> list[AITarget]:
+        api_key = self._require_api_key(model_config)
+        prompt = _build_target_prompt(keyword, history_cards, history_nodes, knowledge_base_prompt, run_prompt)
+        payload = {
+            "model": model_config.model,
+            "temperature": model_config.default_temperature,
+            "max_tokens": min(model_config.max_tokens, 2048),
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You return strict JSON for a Chinese learning research assistant. Return JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{model_config.base_url.rstrip('/')}/chat/completions"
+        data = self._post_chat_completion(url, headers, payload)
+        content = data["choices"][0]["message"]["content"]
+        try:
+            parsed = AITargetOutput.model_validate(json.loads(_strip_code_fence(content)))
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise AIProviderError("模型返回格式异常，无法解析 AI 采集目标。") from exc
+        return [
+            AITarget(url=item.url, title=item.title, reason=item.reason)
+            for item in parsed.targets
+            if _is_collectable_url(item.url)
+        ][:10]
+
+    def _generate_ai_output_with_prompt(
+        self,
+        prompt: str,
+        model_config: models.ModelConfig,
+        api_key: str,
+    ) -> AIOutput:
         payload = {
             "model": model_config.model,
             "temperature": model_config.default_temperature,
@@ -96,15 +188,20 @@ class AIOrchestrator:
             "Content-Type": "application/json",
         }
         url = f"{model_config.base_url.rstrip('/')}/chat/completions"
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        data = self._post_chat_completion(url, headers, payload)
         content = data["choices"][0]["message"]["content"]
         try:
             return _parse_ai_output(content)
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError):
             return self._repair_provider_output(content, model_config, api_key)
+
+    def _require_api_key(self, model_config: models.ModelConfig | None) -> str:
+        if model_config is None:
+            raise ValueError("请先保存模型配置")
+        api_key = self.secret_store.get(model_config.api_key_reference)
+        if not api_key:
+            raise ValueError("请先保存 API 密钥")
+        return api_key
 
     def _repair_provider_output(
         self,
@@ -135,12 +232,42 @@ class AIOrchestrator:
             "Content-Type": "application/json",
         }
         url = f"{model_config.base_url.rstrip('/')}/chat/completions"
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        data = self._post_chat_completion(url, headers, payload)
         repaired_content = data["choices"][0]["message"]["content"]
-        return _parse_ai_output(repaired_content)
+        try:
+            return _parse_ai_output(repaired_content)
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise AIProviderError("模型返回格式异常，自动修复后仍无法解析阅读分析结果。") from exc
+
+    def _post_chat_completion(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            with httpx.Client(timeout=self._long_running_timeout()) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in {401, 403}:
+                message = f"模型鉴权失败（HTTP {status}），请检查 API Key。"
+            else:
+                message = f"模型服务返回错误（HTTP {status}）。"
+            raise AIProviderError(message) from exc
+        except httpx.ConnectTimeout as exc:
+            raise AIProviderError("模型服务连接超时，请检查 Base URL 或网络。") from exc
+        except httpx.ReadTimeout as exc:
+            raise AIProviderError("模型仍未返回结果。当前分析请求不会主动限制读取时长，请检查模型服务是否中断了连接。") from exc
+        except httpx.HTTPError as exc:
+            raise AIProviderError("模型请求失败，请检查模型服务地址、网络或代理配置。") from exc
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise AIProviderError("模型服务返回格式异常。") from exc
+
+    def _long_running_timeout(self) -> httpx.Timeout:
+        return httpx.Timeout(
+            connect=min(self.timeout, 15.0),
+            read=None,
+            write=max(self.timeout, 30.0),
+            pool=min(self.timeout, 15.0),
+        )
 
     def test_connection(
         self,
@@ -223,12 +350,20 @@ def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:
             details=f"从当前已抓取素材中优先参考：{source_summary}。",
             source_indexes=source_indexes[:5],
         ),
+        AICard(
+            type="keyword_hint",
+            title=f"{keyword} 牵连关键词",
+            summary=f"可继续关注 {keyword} 周边的核心术语、相关技术点和上下游概念。",
+            details=f"本地 fallback 只能基于素材标题给出粗略提示，建议用模型提炼更准确的关键词知识点。参考素材：{source_summary}。",
+            source_indexes=source_indexes[:5],
+        ),
     ]
     nodes = [
         AINode(type="keyword", name=keyword, summary=f"{keyword} 学习主题", tags=["keyword"]),
         AINode(type="concept", name=f"{keyword} 核心知识点", tags=["key_point"]),
         AINode(type="skill", name=f"{keyword} 使用方法", tags=["usage"]),
         AINode(type="project", name=f"{keyword} 实践项目", tags=["practice"]),
+        AINode(type="concept", name=f"{keyword} 牵连关键词", tags=["keyword_hint"]),
     ]
     for material in materials[:3]:
         source_node_name = _source_node_name(material)
@@ -244,6 +379,7 @@ def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:
         AIEdge(source=keyword, target=f"{keyword} 核心知识点", type="contains", confidence=0.72),
         AIEdge(source=f"{keyword} 核心知识点", target=f"{keyword} 使用方法", type="prerequisite", confidence=0.68),
         AIEdge(source=f"{keyword} 使用方法", target=f"{keyword} 实践项目", type="applied_by", confidence=0.66),
+        AIEdge(source=keyword, target=f"{keyword} 牵连关键词", type="related", confidence=0.62),
     ]
     for material in materials[:3]:
         source_node_name = _source_node_name(material)
@@ -283,7 +419,12 @@ def _source_node_name(material: Material) -> str:
     return f"来源：{material.title}（{label}）"
 
 
-def _build_prompt(keyword: str, materials: list[Material]) -> str:
+def _build_prompt(
+    keyword: str,
+    materials: list[Material],
+    knowledge_base_prompt: str | None = None,
+    run_prompt: str | None = None,
+) -> str:
     source_blocks = []
     for index, material in enumerate(materials[:10]):
         source_blocks.append(
@@ -291,12 +432,14 @@ def _build_prompt(keyword: str, materials: list[Material]) -> str:
         )
     return (
         f"关键词：{keyword}\n"
+        f"{_preference_context(knowledge_base_prompt, run_prompt)}"
         "你是一个学习研究助手。请认真阅读下面的文章正文和摘要，比较不同来源，提炼真正有学习价值的信息。"
         "不要把搜索结果网页列表当作答案，不要简单复述标题，不要保留广告、导航、重复内容或低质量材料。"
         "请输出中文阅读分析，重点回答：核心知识点是什么、怎么使用、可以做什么项目、应该如何学习。"
+        "同时提炼 5-10 个牵连关键词知识点，解释它们与本关键词的关系。"
         "每张卡片都必须引用 source_indexes，表示支撑这条结论的来源编号。"
         "严格返回 JSON，结构为："
-        "{\"cards\":[{\"type\":\"key_point|usage_method|practice_project|learning_path|recommended_reading\","
+        "{\"cards\":[{\"type\":\"key_point|usage_method|practice_project|learning_path|recommended_reading|keyword_hint\","
         "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
         "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|source\",\"name\":\"...\","
         "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
@@ -304,6 +447,111 @@ def _build_prompt(keyword: str, materials: list[Material]) -> str:
         "\"confidence\":0.7,\"source_indexes\":[0]}]}。\n\n"
         + "\n\n".join(source_blocks)
     )
+
+
+def _build_summary_prompt(
+    keyword: str,
+    materials: list[Material],
+    history_cards: list[models.Card],
+    history_nodes: list[models.KnowledgeNode],
+    knowledge_base_prompt: str | None = None,
+    run_prompt: str | None = None,
+) -> str:
+    source_blocks = []
+    for index, material in enumerate(materials[:12]):
+        source_blocks.append(
+            f"[{index}] title: {material.title}\nurl: {material.url}\ntext: {material.text[:1800]}"
+        )
+    history = _history_context(history_cards, history_nodes)
+    return (
+        f"关键词：{keyword}\n"
+        f"{_preference_context(knowledge_base_prompt, run_prompt)}"
+        "你是学习研究助手。请阅读本次抓取的网页正文，并与已有知识库内容对比。"
+        "目标是筛掉重复、空泛、广告化、低价值内容，只输出本次材料相对已有知识真正新增或更值得学习的内容。"
+        "必须输出中文 JSON，不要解释 JSON 之外的内容。"
+        "输出至少包含：1 张 type=summary 的本次素材总结卡片，1-3 张 type=keyword_hint 的牵连关键词知识点卡片；"
+        "如果有新的核心知识、使用方法或项目，也可以输出 key_point、usage_method、practice_project、learning_path、recommended_reading。"
+        "每张卡片必须引用 source_indexes。nodes 中要包含新增或强化的关键词/概念/技能/项目节点，edges 中表达依赖、关联或来源支撑。"
+        "严格 JSON 结构为："
+        "{\"cards\":[{\"type\":\"summary|keyword_hint|key_point|usage_method|practice_project|learning_path|recommended_reading\","
+        "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
+        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|source\",\"name\":\"...\","
+        "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
+        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"prerequisite|contains|related|applied_by|supported_by_source\","
+        "\"confidence\":0.7,\"source_indexes\":[0]}]}。\n\n"
+        f"已有知识库摘要：\n{history}\n\n"
+        "本次素材：\n"
+        + "\n\n".join(source_blocks)
+    )
+
+
+def _build_target_prompt(
+    keyword: str,
+    history_cards: list[models.Card],
+    history_nodes: list[models.KnowledgeNode],
+    knowledge_base_prompt: str | None = None,
+    run_prompt: str | None = None,
+) -> str:
+    history = _history_context(history_cards, history_nodes)
+    return (
+        f"关键词：{keyword}\n"
+        f"{_preference_context(knowledge_base_prompt, run_prompt)}"
+        "请作为学习研究助手，为该关键词推荐 5-8 个值得直接抓取阅读的网页 URL。"
+        "要求：只返回具体文章、官方文档、项目仓库、技术问答或论文页面；不要返回搜索结果页、首页、登录页、广告页、聚合页。"
+        "请结合已有知识库内容，避开明显重复、过浅或低价值的材料，优先选择能带来新增知识点、使用方法、实践项目或学习路径的页面。"
+        "严格返回 JSON，结构为："
+        "{\"targets\":[{\"url\":\"https://...\",\"title\":\"...\",\"reason\":\"为什么值得采集\"}]}。\n\n"
+        f"已有知识库摘要：\n{history}"
+    )
+
+
+def _history_context(history_cards: list[models.Card], history_nodes: list[models.KnowledgeNode]) -> str:
+    card_lines = [
+        f"- 卡片：{card.title} / {card.summary[:180]}"
+        for card in history_cards[:20]
+        if card.title or card.summary
+    ]
+    node_lines = [
+        f"- 节点：{node.name} / {(node.summary or '')[:160]}"
+        for node in history_nodes[:30]
+        if node.name
+    ]
+    lines = [*card_lines, *node_lines]
+    return "\n".join(lines) if lines else "暂无历史知识。"
+
+
+def _preference_context(knowledge_base_prompt: str | None, run_prompt: str | None) -> str:
+    lines = []
+    if knowledge_base_prompt:
+        lines.append(f"知识库默认学习偏好：{knowledge_base_prompt.strip()}")
+    if run_prompt:
+        lines.append(f"本次学习偏好：{run_prompt.strip()}")
+    if not lines:
+        return ""
+    return (
+        "请将以下学习偏好作为筛选依据，优先保留匹配学习阶段、兴趣方向和实践目标的内容，"
+        "弱相关或不符合偏好的内容可以降权或忽略。\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
+def _is_collectable_url(url: str) -> bool:
+    lowered = url.strip().lower()
+    if not lowered.startswith(("http://", "https://")):
+        return False
+    blocked_fragments = [
+        "google.com/search",
+        "bing.com/search",
+        "github.com/search",
+        "juejin.cn/search",
+        "dev.to/search",
+        "stackoverflow.com/search",
+        "hn.algolia.com",
+        "/login",
+        "/signin",
+    ]
+    return not any(fragment in lowered for fragment in blocked_fragments)
 
 
 def _strip_code_fence(content: str) -> str:

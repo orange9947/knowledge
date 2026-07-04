@@ -49,6 +49,7 @@ describe("App", () => {
                 id: 1,
                 name: "默认知识库",
                 description: "默认知识库",
+                learning_prompt: "我是初学者",
                 created_at: "2026-07-04T00:00:00Z",
                 updated_at: "2026-07-04T00:00:00Z",
               },
@@ -79,6 +80,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "AI 学习知识图谱" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "知识提炼" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "素材证据" })).toBeInTheDocument();
+    expect(screen.getByLabelText("阅读分析模型配置")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeInTheDocument();
     expect(await screen.findByText("API 0.1.0")).toBeInTheDocument();
@@ -114,6 +116,155 @@ describe("App", () => {
           }),
         });
       }
+      if (url.endsWith("/runs/8/ai-collect") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 8,
+            knowledge_base_id: 1,
+            keyword: "AI 智能体",
+            mode: "light",
+            status: "completed",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: "2026-07-04T00:00:00Z",
+            language_policy: "zh-en-to-zh",
+            source_count: 1,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: false,
+            learning_prompt: "本次关注工具链",
+          }),
+        });
+      }
+      if (url.endsWith("/runs/8/sources")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: 8,
+              run_id: 8,
+              url: "https://example.com/agent-guide",
+              title: "Agent guide",
+              site: "example.com",
+              language: "en",
+              published_at: null,
+              status: "success",
+              status_reason: null,
+              snippet: null,
+              extracted_text: "Agent guide body",
+              content_hash: "hash-8",
+              quality_score: 1,
+              is_pinned: false,
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/runs/8/cards")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: 81,
+              run_id: 8,
+              type: "summary",
+              title: "AI 智能体 AI 采集总结",
+              summary: "新增工具调用实践",
+              details: "已过滤重复内容",
+              source_ids: [8],
+              node_ids: [],
+              sort_order: 0,
+              approval_status: "candidate",
+              candidate_payload: null,
+            },
+            {
+              id: 82,
+              run_id: 8,
+              type: "keyword_hint",
+              title: "工具调用",
+              summary: "与 AI 智能体执行外部动作相关",
+              details: null,
+              source_ids: [8],
+              node_ids: [],
+              sort_order: 1,
+              approval_status: "candidate",
+              candidate_payload: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/runs/8/cards/approve") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 8,
+            knowledge_base_id: 1,
+            keyword: "AI 智能体",
+            mode: "light",
+            status: "completed",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: "2026-07-04T00:00:00Z",
+            language_policy: "zh-en-to-zh",
+            source_count: 1,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: false,
+            learning_prompt: "本次关注工具链",
+          }),
+        });
+      }
+      if (url.endsWith("/runs/7/summarize") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 7,
+            knowledge_base_id: 1,
+            keyword: "RAG",
+            mode: "light",
+            status: "partial",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: null,
+            language_policy: "zh-en-to-zh",
+            source_count: 1,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: false,
+            learning_prompt: null,
+          }),
+        });
+      }
+      if (url.endsWith("/runs/7/cards")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: 71,
+              run_id: 7,
+              type: "summary",
+              title: "RAG 本次总结",
+              summary: "新增重排序知识",
+              details: "已过滤重复内容",
+              source_ids: [1],
+              node_ids: [],
+              sort_order: 0,
+              approval_status: "candidate",
+              candidate_payload: null,
+            },
+            {
+              id: 72,
+              run_id: 7,
+              type: "keyword_hint",
+              title: "重排序",
+              summary: "RAG 的牵连知识点",
+              details: null,
+              source_ids: [1],
+              node_ids: [],
+              sort_order: 1,
+              approval_status: "candidate",
+              candidate_payload: null,
+            },
+          ],
+        });
+      }
       if (url.endsWith("/knowledge-bases")) {
         return Promise.resolve({
           ok: true,
@@ -122,6 +273,7 @@ describe("App", () => {
               id: 1,
               name: "默认知识库",
               description: null,
+              learning_prompt: "我是初学者",
               created_at: "2026-07-04T00:00:00Z",
               updated_at: "2026-07-04T00:00:00Z",
             },
@@ -129,6 +281,7 @@ describe("App", () => {
               id: 2,
               name: "机器人",
               description: "机器人学习",
+              learning_prompt: null,
               created_at: "2026-07-04T00:00:00Z",
               updated_at: "2026-07-04T00:00:00Z",
             },
@@ -137,6 +290,20 @@ describe("App", () => {
       }
       if (url.endsWith("/knowledge-bases/2") && init?.method === "DELETE") {
         return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
+      }
+      if (url.endsWith("/knowledge-bases/1") && init?.method === "PATCH") {
+        const payload = JSON.parse(String(init.body)) as { learning_prompt?: string | null };
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 1,
+            name: "默认知识库",
+            description: null,
+            learning_prompt: payload.learning_prompt,
+            created_at: "2026-07-04T00:00:00Z",
+            updated_at: "2026-07-04T00:00:00Z",
+          }),
+        });
       }
       if (url.includes("/knowledge/graph")) {
         return Promise.resolve({
@@ -190,6 +357,7 @@ describe("App", () => {
               token_usage_estimate: null,
               error_summary: null,
               is_pinned: false,
+              learning_prompt: null,
             },
             sources: [
               {
@@ -210,6 +378,26 @@ describe("App", () => {
               },
             ],
             cards: [],
+          }),
+        });
+      }
+      if (url.endsWith("/runs") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 8,
+            knowledge_base_id: 1,
+            keyword: "AI 智能体",
+            mode: "light",
+            status: "pending",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: null,
+            language_policy: "zh-en-to-zh",
+            source_count: 0,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: false,
+            learning_prompt: "关注项目实战",
           }),
         });
       }
@@ -254,6 +442,7 @@ describe("App", () => {
             token_usage_estimate: null,
             error_summary: null,
             is_pinned: true,
+            learning_prompt: null,
           }),
         });
       }
@@ -262,6 +451,27 @@ describe("App", () => {
           ok: true,
           json: async () => ({
             id: 1,
+            run_id: 7,
+            url: "https://github.com/search?q=RAG",
+            title: "RAG repositories",
+            site: "github.com",
+            language: "en",
+            published_at: null,
+            status: "success",
+            status_reason: null,
+            snippet: null,
+            extracted_text: "RAG material",
+            content_hash: "hash",
+            quality_score: 1,
+            is_pinned: true,
+          }),
+        });
+      }
+      if (url.endsWith("/sources/7/retention") && init?.method === "PATCH") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 7,
             run_id: 7,
             url: "https://github.com/search?q=RAG",
             title: "RAG repositories",
@@ -299,7 +509,31 @@ describe("App", () => {
           }),
         });
       }
+      if (url.endsWith("/sources/7/clear-text") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 7,
+            run_id: 7,
+            url: "https://github.com/search?q=RAG",
+            title: "RAG repositories",
+            site: "github.com",
+            language: "en",
+            published_at: null,
+            status: "success",
+            status_reason: null,
+            snippet: null,
+            extracted_text: null,
+            content_hash: null,
+            quality_score: 1,
+            is_pinned: true,
+          }),
+        });
+      }
       if (url.endsWith("/sources/1") && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
+      }
+      if (url.endsWith("/sources/7") && init?.method === "DELETE") {
         return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
       }
       if (url.includes("/runs")) {
@@ -319,6 +553,7 @@ describe("App", () => {
               token_usage_estimate: null,
               error_summary: null,
               is_pinned: false,
+              learning_prompt: null,
             },
           ],
         });
@@ -329,6 +564,21 @@ describe("App", () => {
 
     render(<App />);
     await screen.findByText("API 0.1.0");
+
+    await user.click(screen.getAllByRole("button", { name: "测试连接" })[0]);
+    expect(await screen.findByText("模型连接成功（42ms）")).toBeInTheDocument();
+    expect(screen.getByLabelText("关键词提炼")).toBeInTheDocument();
+    await user.clear(screen.getByDisplayValue("我是初学者"));
+    await user.type(screen.getByLabelText("知识库偏好"), "我是初学者，关注项目实战");
+    await user.type(screen.getByLabelText("本次偏好"), "本次关注工具链");
+    await user.click(screen.getByRole("button", { name: "保存学习偏好" }));
+    expect(await screen.findByText("学习偏好已保存")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "AI 采集" }));
+    expect(await screen.findByText("工具调用")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "全选待加入" }));
+    expect(await screen.findByText("已选择 2 张待加入卡片")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "加入选中知识" }));
+    expect(await screen.findByText("已将 2 张知识卡片加入图谱")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "知识图谱" }));
     expect(screen.getByRole("heading", { name: "知识关系" })).toBeInTheDocument();
@@ -341,14 +591,18 @@ describe("App", () => {
     await user.type(screen.getByRole("textbox", { name: "筛选历史记录" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
     expect(await screen.findByText("RAG repositories")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "学习" }));
+    await user.click(screen.getByRole("button", { name: "总结本次素材" }));
+    expect(await screen.findByText("重排序")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "历史记录" }));
     await user.click(screen.getByRole("button", { name: "保留任务 7" }));
     expect(await screen.findByText("已保留任务 #7")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "保留来源 1" }));
-    expect(await screen.findByText("已保留来源 #1")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "清空正文 1" }));
-    expect(await screen.findByText("已清空来源 #1 的正文")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "删除来源 1" }));
-    expect(await screen.findByText("已删除来源 #1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保留来源 7" }));
+    expect(await screen.findByText("已保留来源 #7")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "清空正文 7" }));
+    expect(await screen.findByText("已清空来源 #7 的正文")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除来源 7" }));
+    expect(await screen.findByText("已删除来源 #7")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
@@ -388,16 +642,37 @@ describe("App", () => {
         model: "gpt-4.1-mini",
       }),
     );
+    const runCreateCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/runs") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(runCreateCall?.[1]?.body))).toEqual(
+      expect.objectContaining({
+        learning_prompt: "本次关注工具链",
+      }),
+    );
+    const promptSaveCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/knowledge-bases/1") && init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(promptSaveCall?.[1]?.body))).toEqual({
+      learning_prompt: "我是初学者，关注项目实战",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/runs/8/cards/approve",
+      expect.objectContaining({
+        body: JSON.stringify({ card_ids: [81, 82] }),
+        method: "POST",
+      }),
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/runs/7/retention",
       expect.objectContaining({ method: "PATCH" }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sources/1/clear-text",
+      "/api/sources/7/clear-text",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sources/1",
+      "/api/sources/7",
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenCalledWith(

@@ -20,6 +20,7 @@ class KnowledgeBase(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(160), index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    learning_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -48,6 +49,7 @@ class LearningRun(Base):
     token_usage_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_pinned: Mapped[bool] = mapped_column(default=False)
+    learning_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     knowledge_base: Mapped[KnowledgeBase] = relationship(back_populates="runs")
     sources: Mapped[list["Source"]] = relationship(
@@ -93,6 +95,8 @@ class Card(Base):
     source_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     node_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    approval_status: Mapped[str] = mapped_column(String(32), default="approved", index=True)
+    candidate_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     run: Mapped[LearningRun] = relationship(back_populates="cards")
 

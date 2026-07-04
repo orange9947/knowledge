@@ -14,6 +14,7 @@ def test_fallback_output_generates_cards_nodes_and_edges():
         "practice_project",
         "learning_path",
         "recommended_reading",
+        "keyword_hint",
     ]
     assert any(node.type == "keyword" and node.name == "AI Agent" for node in output.nodes)
     assert any(edge.type == "contains" for edge in output.edges)
@@ -102,3 +103,12 @@ def test_provider_output_gets_one_repair_attempt(monkeypatch):
     assert len(requests) == 2
     repair_payload = requests[1].read().decode("utf-8")
     assert "Repair malformed model output" in repair_payload
+
+
+def test_long_running_model_requests_do_not_limit_read_timeout():
+    timeout = AIOrchestrator(timeout=30)._long_running_timeout()
+
+    assert timeout.connect == 15.0
+    assert timeout.read is None
+    assert timeout.write == 30.0
+    assert timeout.pool == 15.0

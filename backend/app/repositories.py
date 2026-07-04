@@ -11,6 +11,7 @@ from app.schemas import (
     CardCreate,
     KnowledgeEdgeCreate,
     KnowledgeBaseCreate,
+    KnowledgeBaseUpdate,
     KnowledgeNodeCreate,
     LearningRunCreate,
     ModelConfigWrite,
@@ -63,6 +64,7 @@ class KnowledgeRepository:
             knowledge_base = models.KnowledgeBase(
                 name=DEFAULT_KNOWLEDGE_BASE_NAME,
                 description="用于存放未分类学习任务的默认知识库。",
+                learning_prompt=None,
             )
             self.session.add(knowledge_base)
             self.session.commit()
@@ -75,8 +77,28 @@ class KnowledgeRepository:
         existing = self.session.scalar(statement)
         if existing is not None:
             return existing
-        knowledge_base = models.KnowledgeBase(name=name, description=payload.description)
+        knowledge_base = models.KnowledgeBase(
+            name=name,
+            description=payload.description,
+            learning_prompt=_clean_optional_text(payload.learning_prompt),
+        )
         self.session.add(knowledge_base)
+        self.session.commit()
+        self.session.refresh(knowledge_base)
+        return knowledge_base
+
+    def update_knowledge_base(
+        self,
+        knowledge_base: models.KnowledgeBase,
+        payload: KnowledgeBaseUpdate,
+    ) -> models.KnowledgeBase:
+        changed_fields = payload.model_fields_set
+        if "name" in changed_fields and payload.name is not None:
+            knowledge_base.name = payload.name.strip()
+        if "description" in changed_fields:
+            knowledge_base.description = payload.description
+        if "learning_prompt" in changed_fields:
+            knowledge_base.learning_prompt = _clean_optional_text(payload.learning_prompt)
         self.session.commit()
         self.session.refresh(knowledge_base)
         return knowledge_base
@@ -120,6 +142,7 @@ class KnowledgeRepository:
             keyword=payload.keyword.strip(),
             mode=payload.mode,
             knowledge_base_id=knowledge_base_id,
+            learning_prompt=_clean_optional_text(payload.learning_prompt),
         )
         self.session.add(run)
         self.session.commit()
@@ -297,6 +320,34 @@ class KnowledgeRepository:
         statement = select(models.Card).where(models.Card.run_id == run_id).order_by(models.Card.sort_order.asc())
         return list(self.session.scalars(statement))
 
+    def delete_cards_for_run_by_types(
+        self,
+        run_id: int,
+        card_types: Iterable[str],
+        approval_status: str | None = None,
+    ) -> None:
+        deleted_types = set(card_types)
+        if not deleted_types:
+            return
+        statement = select(models.Card).where(
+            models.Card.run_id == run_id,
+            models.Card.type.in_(deleted_types),
+        )
+        if approval_status is not None:
+            statement = statement.where(models.Card.approval_status == approval_status)
+        for card in list(
+            self.session.scalars(statement)
+        ):
+            self.session.delete(card)
+        self.session.commit()
+
+    def update_card_approval(self, card: models.Card, node_ids: list[int]) -> models.Card:
+        card.approval_status = "approved"
+        card.node_ids = node_ids
+        self.session.commit()
+        self.session.refresh(card)
+        return card
+
     def upsert_node(self, payload: KnowledgeNodeCreate) -> models.KnowledgeNode:
         normalized_name = normalize_name(payload.name)
         statement = select(models.KnowledgeNode).where(
@@ -326,8 +377,19 @@ class KnowledgeRepository:
         return node
 
     def add_edge(self, payload: KnowledgeEdgeCreate) -> models.KnowledgeEdge:
-        edge = models.KnowledgeEdge(**payload.model_dump())
-        self.session.add(edge)
+        statement = select(models.KnowledgeEdge).where(
+            models.KnowledgeEdge.knowledge_base_id == payload.knowledge_base_id,
+            models.KnowledgeEdge.source_node_id == payload.source_node_id,
+            models.KnowledgeEdge.target_node_id == payload.target_node_id,
+            models.KnowledgeEdge.type == payload.type,
+        )
+        edge = self.session.scalar(statement)
+        if edge is None:
+            edge = models.KnowledgeEdge(**payload.model_dump())
+            self.session.add(edge)
+        else:
+            edge.confidence = max(edge.confidence, payload.confidence)
+            edge.evidence_source_ids = merge_int_unique(edge.evidence_source_ids or [], payload.evidence_source_ids)
         self.session.commit()
         self.session.refresh(edge)
         return edge
@@ -453,3 +515,21 @@ def mask_secret(value: str) -> str:
     if len(stripped) <= 8:
         return "********"
     return f"{stripped[:4]}...{stripped[-4:]}"
+
+
+def merge_int_unique(existing: Iterable[int], incoming: Iterable[int]) -> list[int]:
+    merged: list[int] = []
+    seen: set[int] = set()
+    for item in [*existing, *incoming]:
+        if item in seen:
+            continue
+        seen.add(item)
+        merged.append(item)
+    return merged
+
+
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None

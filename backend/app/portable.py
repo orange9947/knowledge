@@ -34,7 +34,11 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
 
     for knowledge_base in sorted(payload.knowledge_bases, key=lambda item: item.id):
         created = repository.create_knowledge_base(
-            KnowledgeBaseCreate(name=knowledge_base.name, description=knowledge_base.description)
+            KnowledgeBaseCreate(
+                name=knowledge_base.name,
+                description=knowledge_base.description,
+                learning_prompt=knowledge_base.learning_prompt,
+            )
         )
         knowledge_base_id_map[knowledge_base.id] = created.id
 
@@ -44,6 +48,7 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
                 keyword=run.keyword,
                 mode=_mode(run.mode),
                 knowledge_base_id=knowledge_base_id_map.get(run.knowledge_base_id, default_base.id),
+                learning_prompt=run.learning_prompt,
             )
         )
         repository.update_run_status(
@@ -104,6 +109,8 @@ def import_knowledge(repository: KnowledgeRepository, payload: KnowledgeExport) 
                 source_ids=[source_id_map[item] for item in card.source_ids if item in source_id_map],
                 node_ids=[node_id_map[item] for item in card.node_ids if item in node_id_map],
                 sort_order=card.sort_order,
+                approval_status="approved" if card.approval_status == "approved" else "candidate",
+                candidate_payload=card.candidate_payload,
             )
         )
 

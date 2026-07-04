@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -19,6 +19,13 @@ class HealthResponse(BaseModel):
 class KnowledgeBaseCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str | None = None
+    learning_prompt: str | None = None
+
+
+class KnowledgeBaseUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = None
+    learning_prompt: str | None = None
 
 
 class KnowledgeBaseRead(BaseModel):
@@ -27,6 +34,7 @@ class KnowledgeBaseRead(BaseModel):
     id: int
     name: str
     description: str | None
+    learning_prompt: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -35,6 +43,7 @@ class LearningRunCreate(BaseModel):
     keyword: str = Field(min_length=1, max_length=240)
     mode: RunMode = "light"
     knowledge_base_id: int | None = None
+    learning_prompt: str | None = None
 
 
 class LearningRunRead(BaseModel):
@@ -52,6 +61,7 @@ class LearningRunRead(BaseModel):
     token_usage_estimate: int | None
     error_summary: str | None
     is_pinned: bool = False
+    learning_prompt: str | None = None
 
 
 class RunDetailRead(BaseModel):
@@ -169,6 +179,8 @@ class CardCreate(BaseModel):
     source_ids: list[int] = Field(default_factory=list)
     node_ids: list[int] = Field(default_factory=list)
     sort_order: int = 0
+    approval_status: Literal["candidate", "approved"] = "approved"
+    candidate_payload: dict[str, Any] | None = None
 
 
 class CardRead(BaseModel):
@@ -183,6 +195,12 @@ class CardRead(BaseModel):
     source_ids: list[int]
     node_ids: list[int]
     sort_order: int
+    approval_status: str = "approved"
+    candidate_payload: dict[str, Any] | None = None
+
+
+class CardApprovalRequest(BaseModel):
+    card_ids: list[int] = Field(min_length=1)
 
 
 class KnowledgeNodeCreate(BaseModel):

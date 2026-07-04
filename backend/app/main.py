@@ -11,10 +11,12 @@ from app.portable import export_knowledge, import_knowledge
 from app.repositories import KnowledgeRepository
 from app.schemas import (
     CardRead,
+    CardApprovalRequest,
     GraphRead,
     HealthResponse,
     KnowledgeBaseCreate,
     KnowledgeBaseRead,
+    KnowledgeBaseUpdate,
     KnowledgeExport,
     KnowledgeNodeRead,
     LearningRunCreate,
@@ -30,7 +32,7 @@ from app.schemas import (
     SourceRead,
 )
 from app.services import LearningRunService
-from app.ai import AIOrchestrator
+from app.ai import AIOrchestrator, AIProviderError
 from app import models
 
 
@@ -137,6 +139,19 @@ def create_knowledge_base(
     return KnowledgeRepository(session).create_knowledge_base(payload)
 
 
+@app.patch("/knowledge-bases/{knowledge_base_id}", response_model=KnowledgeBaseRead)
+def update_knowledge_base(
+    knowledge_base_id: int,
+    payload: KnowledgeBaseUpdate,
+    session: Session = Depends(get_session),
+):
+    repository = KnowledgeRepository(session)
+    knowledge_base = repository.get_knowledge_base(knowledge_base_id)
+    if knowledge_base is None:
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
+    return repository.update_knowledge_base(knowledge_base, payload)
+
+
 @app.delete("/knowledge-bases/{knowledge_base_id}", status_code=204)
 def delete_knowledge_base(knowledge_base_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
@@ -222,6 +237,19 @@ def collect_run_sources(run_id: int, session: Session = Depends(get_session)):
     return run
 
 
+@app.post("/runs/{run_id}/ai-collect", response_model=LearningRunRead)
+def ai_collect_run_sources(run_id: int, session: Session = Depends(get_session)):
+    try:
+        run = LearningRunService(session).ai_collect_sources(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIProviderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
+    return run
+
+
 @app.get("/runs/{run_id}/sources", response_model=list[SourceRead])
 def list_run_sources(run_id: int, session: Session = Depends(get_session)):
     repository = KnowledgeRepository(session)
@@ -264,7 +292,23 @@ def delete_source(source_id: int, session: Session = Depends(get_session)):
 
 @app.post("/runs/{run_id}/generate", response_model=LearningRunRead)
 def generate_run_output(run_id: int, session: Session = Depends(get_session)):
-    run = LearningRunService(session).generate_learning_output(run_id)
+    try:
+        run = LearningRunService(session).generate_learning_output(run_id)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
+    return run
+
+
+@app.post("/runs/{run_id}/summarize", response_model=LearningRunRead)
+def summarize_run_output(run_id: int, session: Session = Depends(get_session)):
+    try:
+        run = LearningRunService(session).summarize_run(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIProviderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     if run is None:
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return run
@@ -276,6 +320,21 @@ def list_run_cards(run_id: int, session: Session = Depends(get_session)):
     if repository.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return repository.list_cards_for_run(run_id)
+
+
+@app.post("/runs/{run_id}/cards/approve", response_model=LearningRunRead)
+def approve_run_cards(
+    run_id: int,
+    payload: CardApprovalRequest,
+    session: Session = Depends(get_session),
+):
+    try:
+        run = LearningRunService(session).approve_cards(run_id, payload.card_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
+    return run
 
 
 @app.get("/knowledge/graph", response_model=GraphRead)

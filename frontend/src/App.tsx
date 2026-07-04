@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 
 import {
+  aiCollectRun,
+  approveRunCards,
   clearSourceText,
   collectRun,
   createKnowledgeBase,
@@ -43,7 +45,9 @@ import {
   importKnowledge,
   saveModelSettings,
   saveSourceSettings,
+  summarizeRun,
   testModelConnection,
+  updateKnowledgeBase,
   updateRunRetention,
   updateSourceRetention,
   type GraphData,
@@ -108,6 +112,8 @@ const cardTypeLabels: Record<string, string> = {
   practice_project: "实践项目",
   project_tool: "项目工具",
   recommended_reading: "推荐阅读",
+  keyword_hint: "关键词提示",
+  summary: "总结",
   term: "术语",
   usage_method: "使用方法",
 };
@@ -119,6 +125,7 @@ const tagLabels: Record<string, string> = {
   practice: "实践",
   source: "来源",
   usage: "使用方法",
+  keyword_hint: "关键词提示",
 };
 
 const sourceNameLabels: Record<string, string> = {
@@ -223,6 +230,7 @@ const emptyModelForm = {
   default_temperature: 0.2,
   max_tokens: 4096,
 };
+type ModelFormState = typeof emptyModelForm;
 
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof BookOpen }> = [
   { key: "learn", label: "学习", icon: BookOpen },
@@ -240,6 +248,9 @@ function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [activeKnowledgeBaseId, setActiveKnowledgeBaseId] = useState<number | null>(null);
   const [newKnowledgeBaseName, setNewKnowledgeBaseName] = useState("");
+  const [knowledgeBasePrompt, setKnowledgeBasePrompt] = useState("");
+  const [runPrompt, setRunPrompt] = useState("");
+  const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
   const [historyFilter, setHistoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [runs, setRuns] = useState<LearningRun[]>([]);
@@ -314,6 +325,8 @@ function App() {
         setGraph(graphData);
         setRunSources([]);
         setCards([]);
+        setSelectedCardIds([]);
+        setKnowledgeBasePrompt(knowledgeBases.find((item) => item.id === activeKnowledgeBaseId)?.learning_prompt ?? "");
         setSelectedNode(null);
         setSelectedRun(null);
       } catch (error) {
@@ -333,6 +346,10 @@ function App() {
     () => knowledgeBases.find((item) => item.id === activeKnowledgeBaseId) ?? null,
     [activeKnowledgeBaseId, knowledgeBases],
   );
+
+  useEffect(() => {
+    setKnowledgeBasePrompt(activeKnowledgeBase?.learning_prompt ?? "");
+  }, [activeKnowledgeBase?.id, activeKnowledgeBase?.learning_prompt]);
 
   const sourceRows = useMemo(() => {
     const rows = sources.length > 0 ? sources : defaultSources.map((source, index) => ({ ...source, id: index + 1 }));
@@ -358,6 +375,21 @@ function App() {
     const [runData, graphData] = await Promise.all([fetchRuns(knowledgeBaseId), fetchGraph(knowledgeBaseId)]);
     setRuns(runData);
     setGraph(graphData);
+  }
+
+  async function refreshRunAnalysis(run: LearningRun, knowledgeBaseId = activeKnowledgeBaseId) {
+    if (!knowledgeBaseId) return;
+    const [collectedSources, generatedCards, graphData] = await Promise.all([
+      fetchRunSources(run.id),
+      fetchRunCards(run.id),
+      fetchGraph(knowledgeBaseId),
+    ]);
+    setRuns((current) => current.map((item) => (item.id === run.id ? run : item)));
+    setRunSources(collectedSources);
+    setCards(generatedCards);
+    setSelectedCardIds((current) => current.filter((id) => generatedCards.some((card) => card.id === id)));
+    setGraph(graphData);
+    setSelectedRun(run);
   }
 
   async function handleSaveModel() {
@@ -458,6 +490,27 @@ function App() {
     }
   }
 
+  async function handleSaveKnowledgePrompt() {
+    if (!activeKnowledgeBaseId) {
+      setMessage("请先创建或选择知识库");
+      return;
+    }
+    setBusy(true);
+    setMessage("正在保存学习偏好...");
+    try {
+      const updated = await updateKnowledgeBase(activeKnowledgeBaseId, {
+        learning_prompt: knowledgeBasePrompt.trim() || null,
+      });
+      setKnowledgeBases((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setKnowledgeBasePrompt(updated.learning_prompt ?? "");
+      setMessage("学习偏好已保存");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存学习偏好失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDeleteKnowledgeBase(base: KnowledgeBase) {
     if (!window.confirm(`确定删除知识库「${knowledgeBaseName(base)}」及其全部任务、来源和图谱吗？`)) return;
     setBusy(true);
@@ -497,21 +550,99 @@ function App() {
     setBusy(true);
     setMessage("正在创建学习任务...");
     try {
-      const run = await createRun(keyword.trim(), mode, activeKnowledgeBaseId);
+      const run = await createRun(keyword.trim(), mode, activeKnowledgeBaseId, runPrompt);
       setRuns((current) => [run, ...current]);
       setMessage(`任务 #${run.id} 已创建，正在抓取来源...`);
       const collected = await collectRun(run.id);
+      await refreshRunAnalysis(collected, activeKnowledgeBaseId);
       const collectedSources = await fetchRunSources(run.id);
       const generatedCards = await fetchRunCards(run.id);
-      const graphData = await fetchGraph(activeKnowledgeBaseId);
-      setRuns((current) => current.map((item) => (item.id === collected.id ? collected : item)));
-      setRunSources(collectedSources);
-      setCards(generatedCards);
-      setGraph(graphData);
-      setSelectedRun(collected);
-      setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；已分析 ${collectedSources.length} 条素材来源`);
+      const analysisMode = analysisModeLabel(generatedCards, modelSettings);
+      setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；${analysisMode}，素材来源 ${collectedSources.length} 条`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "创建学习任务失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAiCollectRun() {
+    if (!keyword.trim()) {
+      setMessage("请输入关键词");
+      return;
+    }
+    if (!activeKnowledgeBaseId) {
+      setMessage("请先创建或选择知识库");
+      return;
+    }
+    setBusy(true);
+    setMessage("正在创建 AI 采集任务...");
+    try {
+      const run = await createRun(keyword.trim(), mode, activeKnowledgeBaseId, runPrompt);
+      setRuns((current) => [run, ...current]);
+      setMessage(`任务 #${run.id} 已创建，AI 正在筛选采集目标...`);
+      const collected = await aiCollectRun(run.id);
+      await refreshRunAnalysis(collected, activeKnowledgeBaseId);
+      const collectedSources = await fetchRunSources(run.id);
+      const generatedCards = await fetchRunCards(run.id);
+      setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；AI 采集并总结，素材来源 ${collectedSources.length} 条，卡片 ${generatedCards.length} 张`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "AI 采集失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleApproveSelectedCards() {
+    if (!selectedRun) {
+      setMessage("请先选择一个任务");
+      return;
+    }
+    if (selectedCardIds.length === 0) {
+      setMessage("请选择要加入图谱的知识卡片");
+      return;
+    }
+    setBusy(true);
+    setMessage(`正在将 ${selectedCardIds.length} 张知识卡片加入图谱...`);
+    try {
+      const updated = await approveRunCards(selectedRun.id, selectedCardIds);
+      await refreshRunAnalysis(updated, activeKnowledgeBaseId);
+      setSelectedCardIds([]);
+      setMessage(`已将 ${selectedCardIds.length} 张知识卡片加入图谱`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "加入图谱失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleToggleCardSelection(cardId: number, selected: boolean) {
+    setSelectedCardIds((current) => {
+      if (selected) return current.includes(cardId) ? current : [...current, cardId];
+      return current.filter((id) => id !== cardId);
+    });
+  }
+
+  function handleSelectAllCandidateCards() {
+    const candidateIds = cards.filter((card) => card.approval_status === "candidate").map((card) => card.id);
+    setSelectedCardIds(candidateIds);
+    setMessage(candidateIds.length === 0 ? "没有待加入图谱的卡片" : `已选择 ${candidateIds.length} 张待加入卡片`);
+  }
+
+  async function handleSummarizeRun() {
+    if (!selectedRun) {
+      setMessage("请先运行或选择一个任务");
+      return;
+    }
+    setBusy(true);
+    setMessage(`正在总结任务 #${selectedRun.id} 的素材...`);
+    try {
+      const updated = await summarizeRun(selectedRun.id);
+      await refreshRunAnalysis(updated, activeKnowledgeBaseId);
+      const generatedCards = await fetchRunCards(updated.id);
+      setMessage(`任务 #${updated.id} 已完成总结；阅读分析 ${generatedCards.length} 张卡片`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "总结本次素材失败");
     } finally {
       setBusy(false);
     }
@@ -577,6 +708,7 @@ function App() {
       const detail = await fetchRunDetail(runId);
       setSelectedRun(detail.run);
       setCards(detail.cards);
+      setSelectedCardIds([]);
       setRunSources(detail.sources);
       setMessage(`已加载任务 #${detail.run.id}：${detail.run.keyword}`);
     } catch (error) {
@@ -728,15 +860,35 @@ function App() {
           <section className="view-stack" aria-label="学习工作区">
             <RunPanel
               busy={busy}
+              knowledgeBasePrompt={knowledgeBasePrompt}
               keyword={keyword}
               mode={mode}
+              onKnowledgeBasePromptChange={setKnowledgeBasePrompt}
+              onSaveKnowledgePrompt={handleSaveKnowledgePrompt}
               onKeywordChange={setKeyword}
+              onAiCollect={handleAiCollectRun}
               onModeChange={setMode}
               onRun={handleCreateRun}
+              onRunPromptChange={setRunPrompt}
+              runPrompt={runPrompt}
               selectedBaseName={activeKnowledgeBase ? knowledgeBaseName(activeKnowledgeBase) : "未选择知识库"}
             />
             <section className="dashboard-grid learn-grid">
-              <CardsPanel cards={cards} />
+              <CardsPanel
+                busy={busy}
+                cards={cards}
+                modelForm={modelForm}
+                modelSettings={modelSettings}
+                onApproveSelected={handleApproveSelectedCards}
+                onSelectAllCandidates={handleSelectAllCandidateCards}
+                onToggleCardSelection={handleToggleCardSelection}
+                onModelFormChange={setModelForm}
+                onSaveModel={handleSaveModel}
+                onSummarize={handleSummarizeRun}
+                onTestModel={handleTestModel}
+                selectedCardIds={selectedCardIds}
+                selectedRun={selectedRun}
+              />
               <ExtractionPanel
                 busy={busy}
                 onClearText={handleClearSourceText}
@@ -828,22 +980,34 @@ function App() {
 
 type RunPanelProps = {
   busy: boolean;
+  knowledgeBasePrompt: string;
   keyword: string;
   mode: (typeof modes)[number];
+  runPrompt: string;
   selectedBaseName: string;
+  onAiCollect: () => void;
+  onKnowledgeBasePromptChange: (value: string) => void;
   onKeywordChange: (value: string) => void;
   onModeChange: (value: (typeof modes)[number]) => void;
   onRun: () => void;
+  onRunPromptChange: (value: string) => void;
+  onSaveKnowledgePrompt: () => void;
 };
 
 function RunPanel({
   busy,
+  knowledgeBasePrompt,
   keyword,
   mode,
+  runPrompt,
   selectedBaseName,
+  onAiCollect,
+  onKnowledgeBasePromptChange,
   onKeywordChange,
   onModeChange,
   onRun,
+  onRunPromptChange,
+  onSaveKnowledgePrompt,
 }: RunPanelProps) {
   return (
     <section className="run-panel" aria-labelledby="run-title">
@@ -873,12 +1037,78 @@ function RunPanel({
           <Play size={17} fill="currentColor" />
           <span>运行</span>
         </button>
+        <button className="run-button ai-run-button" type="button" onClick={onAiCollect} disabled={busy}>
+          <Sparkles size={17} />
+          <span>AI 采集</span>
+        </button>
+      </div>
+      <div className="preference-controls">
+        <label>
+          <span>知识库偏好</span>
+          <textarea
+            aria-label="知识库偏好"
+            rows={2}
+            value={knowledgeBasePrompt}
+            onChange={(event) => onKnowledgeBasePromptChange(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>本次偏好</span>
+          <textarea
+            aria-label="本次偏好"
+            rows={2}
+            value={runPrompt}
+            onChange={(event) => onRunPromptChange(event.target.value)}
+          />
+        </label>
+        <button
+          aria-label="保存学习偏好"
+          className="icon-action preference-save"
+          disabled={busy}
+          onClick={onSaveKnowledgePrompt}
+          title="保存学习偏好"
+          type="button"
+        >
+          <Save size={17} />
+        </button>
       </div>
     </section>
   );
 }
 
-function CardsPanel({ cards }: { cards: LearningCard[] }) {
+function CardsPanel({
+  busy,
+  cards,
+  modelForm,
+  modelSettings,
+  onApproveSelected,
+  onModelFormChange,
+  onSelectAllCandidates,
+  onSaveModel,
+  onSummarize,
+  onTestModel,
+  onToggleCardSelection,
+  selectedCardIds,
+  selectedRun,
+}: {
+  busy: boolean;
+  cards: LearningCard[];
+  modelForm: ModelFormState;
+  modelSettings: ModelSettings | null;
+  onApproveSelected: () => void;
+  onModelFormChange: (value: ModelFormState | ((current: ModelFormState) => ModelFormState)) => void;
+  onSelectAllCandidates: () => void;
+  onSaveModel: () => void;
+  onSummarize: () => void;
+  onTestModel: () => void;
+  onToggleCardSelection: (cardId: number, selected: boolean) => void;
+  selectedCardIds: number[];
+  selectedRun: LearningRun | null;
+}) {
+  const keywordHintCards = cards.filter((card) => card.type === "keyword_hint");
+  const analysisCards = cards.filter((card) => card.type !== "keyword_hint");
+  const candidateCount = cards.filter((card) => card.approval_status === "candidate").length;
+
   return (
     <div className="panel cards-panel">
       <div className="panel-heading">
@@ -886,17 +1116,185 @@ function CardsPanel({ cards }: { cards: LearningCard[] }) {
           <p className="eyebrow">阅读分析</p>
           <h2>知识提炼</h2>
         </div>
-        <Sparkles size={19} />
+        <div className="panel-actions">
+          <button
+            aria-label="全选待加入"
+            className="icon-action"
+            disabled={busy || candidateCount === 0}
+            onClick={onSelectAllCandidates}
+            title="全选待加入"
+            type="button"
+          >
+            <CirclePlus size={18} />
+          </button>
+          <button
+            aria-label="加入选中知识"
+            className="icon-action"
+            disabled={busy || selectedCardIds.length === 0}
+            onClick={onApproveSelected}
+            title="加入选中知识"
+            type="button"
+          >
+            <GitBranch size={18} />
+          </button>
+          <button
+            aria-label="总结本次素材"
+            className="icon-action"
+            disabled={busy || !selectedRun}
+            onClick={onSummarize}
+            title="总结本次素材"
+            type="button"
+          >
+            <Sparkles size={18} />
+          </button>
+        </div>
       </div>
+      <AnalysisModelConfig
+        busy={busy}
+        modelForm={modelForm}
+        modelSettings={modelSettings}
+        onModelFormChange={onModelFormChange}
+        onSaveModel={onSaveModel}
+        onTestModel={onTestModel}
+      />
+      <KeywordHints
+        cards={keywordHintCards}
+        onToggleCardSelection={onToggleCardSelection}
+        selectedCardIds={selectedCardIds}
+      />
       <div className="card-list">
-        {(cards.length > 0 ? cards : learningCards).map((card) => (
+        {(analysisCards.length > 0 ? analysisCards : learningCards).map((card) => (
           <article className="learning-card" key={card.title}>
-            <span>{cardTypeLabel(card.type)}</span>
+            <div className="card-title-row">
+              {"id" in card ? (
+                <input
+                  aria-label={`选择知识卡片 ${card.title}`}
+                  checked={selectedCardIds.includes(card.id)}
+                  disabled={card.approval_status !== "candidate"}
+                  type="checkbox"
+                  onChange={(event) => onToggleCardSelection(card.id, event.target.checked)}
+                />
+              ) : null}
+              <span>{cardTypeLabel(card.type)}</span>
+              {"approval_status" in card ? (
+                <small className={`approval-badge ${card.approval_status}`}>
+                  {card.approval_status === "approved" ? "已加入图谱" : "待加入图谱"}
+                </small>
+              ) : null}
+            </div>
             <h3>{card.title}</h3>
             <p>{"summary" in card ? card.summary : card.body}</p>
             {"details" in card && card.details ? <small>{card.details}</small> : null}
           </article>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function KeywordHints({
+  cards,
+  onToggleCardSelection,
+  selectedCardIds,
+}: {
+  cards: LearningCard[];
+  onToggleCardSelection: (cardId: number, selected: boolean) => void;
+  selectedCardIds: number[];
+}) {
+  return (
+    <section className="keyword-hints" aria-label="关键词提炼">
+      <div className="keyword-hints-heading">
+        <strong>关键词提炼</strong>
+        <span>{cards.length > 0 ? `${cards.length} 个提示` : "等待总结或运行后生成"}</span>
+      </div>
+      <div className="keyword-hint-list">
+        {cards.length === 0 ? (
+          <p>总结或运行后，会在这里显示牵连的关键词知识点。</p>
+        ) : (
+          cards.map((card) => (
+            <article className="keyword-hint" key={card.id || card.title}>
+              <div className="keyword-hint-title">
+                <input
+                  aria-label={`选择关键词 ${card.title}`}
+                  checked={selectedCardIds.includes(card.id)}
+                  disabled={card.approval_status !== "candidate"}
+                  type="checkbox"
+                  onChange={(event) => onToggleCardSelection(card.id, event.target.checked)}
+                />
+                <strong>{card.title}</strong>
+                <small className={`approval-badge ${card.approval_status}`}>
+                  {card.approval_status === "approved" ? "已加入" : "待加入"}
+                </small>
+              </div>
+              <p>{card.summary}</p>
+              {card.details ? <small>{card.details}</small> : null}
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AnalysisModelConfig({
+  busy,
+  modelForm,
+  modelSettings,
+  onModelFormChange,
+  onSaveModel,
+  onTestModel,
+}: {
+  busy: boolean;
+  modelForm: ModelFormState;
+  modelSettings: ModelSettings | null;
+  onModelFormChange: (value: ModelFormState | ((current: ModelFormState) => ModelFormState)) => void;
+  onSaveModel: () => void;
+  onTestModel: () => void;
+}) {
+  const modelStatus = modelSettings?.api_key_reference ? `已保存：${modelSettings.model}` : "未保存 API Key";
+
+  return (
+    <div className="analysis-model-config" aria-label="阅读分析模型配置">
+      <div className="analysis-model-status">
+        <KeyRound size={16} />
+        <strong>阅读模型</strong>
+        <span>{modelStatus}</span>
+      </div>
+      <div className="analysis-model-grid">
+        <label>
+          <span>接口地址</span>
+          <input
+            value={modelForm.base_url}
+            onChange={(event) => onModelFormChange((current) => ({ ...current, base_url: event.target.value }))}
+          />
+        </label>
+        <label>
+          <span>模型名称</span>
+          <input
+            value={modelForm.model}
+            onChange={(event) => onModelFormChange((current) => ({ ...current, model: event.target.value }))}
+          />
+        </label>
+        <label>
+          <span>API 密钥</span>
+          <input
+            autoComplete="off"
+            placeholder={modelSettings?.api_key_mask ?? "未保存"}
+            type="password"
+            value={modelForm.api_key}
+            onChange={(event) => onModelFormChange((current) => ({ ...current, api_key: event.target.value }))}
+          />
+        </label>
+        <div className="analysis-model-actions">
+          <button className="secondary-button" type="button" onClick={onTestModel} disabled={busy}>
+            <Activity size={16} />
+            <span>测试连接</span>
+          </button>
+          <button className="secondary-button" type="button" onClick={onSaveModel} disabled={busy}>
+            <Save size={16} />
+            <span>保存模型</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1207,9 +1605,9 @@ function SettingsPanel({
   onTestModel,
 }: {
   busy: boolean;
-  modelForm: typeof emptyModelForm;
+  modelForm: ModelFormState;
   modelSettings: ModelSettings | null;
-  onModelFormChange: (value: typeof emptyModelForm | ((current: typeof emptyModelForm) => typeof emptyModelForm)) => void;
+  onModelFormChange: (value: ModelFormState | ((current: ModelFormState) => ModelFormState)) => void;
   onSaveModel: () => void;
   onTestModel: () => void;
 }) {
@@ -1241,6 +1639,7 @@ function SettingsPanel({
           <span>API 密钥</span>
           <input
             value={modelForm.api_key}
+            type="password"
             placeholder={modelSettings?.api_key_mask ?? "未保存"}
             onChange={(event) => onModelFormChange((current) => ({ ...current, api_key: event.target.value }))}
           />
@@ -1545,11 +1944,18 @@ function knowledgeBaseName(base: KnowledgeBase) {
   return baseNameLabels[base.name] ?? base.name;
 }
 
-function toModelInput(modelForm: typeof emptyModelForm): ModelSettingsInput {
+function toModelInput(modelForm: ModelFormState): ModelSettingsInput {
   return {
     ...modelForm,
     api_key: modelForm.api_key || undefined,
   };
+}
+
+function analysisModeLabel(cards: LearningCard[], modelSettings: ModelSettings | null): string {
+  if (cards.length === 0) return "未生成阅读分析";
+  const hasFallbackMarker = cards.some((card) => `${card.summary} ${card.details ?? ""}`.toLowerCase().includes("fallback"));
+  if (hasFallbackMarker || !modelSettings?.api_key_reference) return "fallback 简略提纲";
+  return "模型阅读分析";
 }
 
 function toSourceDrafts(sourceSettings: SourceSettings[]): SourceDraft[] {

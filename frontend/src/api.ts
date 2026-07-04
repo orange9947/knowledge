@@ -18,6 +18,7 @@ export type LearningRun = {
   token_usage_estimate: number | null;
   error_summary: string | null;
   is_pinned: boolean;
+  learning_prompt: string | null;
 };
 
 export type SourceRecord = {
@@ -47,6 +48,8 @@ export type LearningCard = {
   source_ids: number[];
   node_ids: number[];
   sort_order: number;
+  approval_status: "candidate" | "approved" | string;
+  candidate_payload: Record<string, unknown> | null;
 };
 
 export type KnowledgeNode = {
@@ -75,6 +78,7 @@ export type KnowledgeBase = {
   id: number;
   name: string;
   description: string | null;
+  learning_prompt: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -203,10 +207,20 @@ export async function fetchKnowledgeBases(): Promise<KnowledgeBase[]> {
   return request<KnowledgeBase[]>("/knowledge-bases");
 }
 
-export async function createKnowledgeBase(name: string, description?: string): Promise<KnowledgeBase> {
+export async function createKnowledgeBase(name: string, description?: string, learningPrompt?: string): Promise<KnowledgeBase> {
   return request<KnowledgeBase>("/knowledge-bases", {
     method: "POST",
-    body: JSON.stringify({ name, description: description || null }),
+    body: JSON.stringify({ name, description: description || null, learning_prompt: learningPrompt || null }),
+  });
+}
+
+export async function updateKnowledgeBase(
+  knowledgeBaseId: number,
+  payload: { name?: string; description?: string | null; learning_prompt?: string | null },
+): Promise<KnowledgeBase> {
+  return request<KnowledgeBase>(`/knowledge-bases/${knowledgeBaseId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -216,10 +230,20 @@ export async function deleteKnowledgeBase(knowledgeBaseId: number): Promise<void
   });
 }
 
-export async function createRun(keyword: string, mode: string, knowledgeBaseId: number): Promise<LearningRun> {
+export async function createRun(
+  keyword: string,
+  mode: string,
+  knowledgeBaseId: number,
+  learningPrompt?: string,
+): Promise<LearningRun> {
   return request<LearningRun>("/runs", {
     method: "POST",
-    body: JSON.stringify({ keyword, mode, knowledge_base_id: knowledgeBaseId }),
+    body: JSON.stringify({
+      keyword,
+      mode,
+      knowledge_base_id: knowledgeBaseId,
+      learning_prompt: learningPrompt?.trim() || null,
+    }),
   });
 }
 
@@ -229,6 +253,18 @@ export async function fetchRuns(knowledgeBaseId?: number | null): Promise<Learni
 
 export async function collectRun(runId: number): Promise<LearningRun> {
   return request<LearningRun>(`/runs/${runId}/collect`, {
+    method: "POST",
+  });
+}
+
+export async function aiCollectRun(runId: number): Promise<LearningRun> {
+  return request<LearningRun>(`/runs/${runId}/ai-collect`, {
+    method: "POST",
+  });
+}
+
+export async function summarizeRun(runId: number): Promise<LearningRun> {
+  return request<LearningRun>(`/runs/${runId}/summarize`, {
     method: "POST",
   });
 }
@@ -275,6 +311,13 @@ export async function deleteSource(sourceId: number): Promise<void> {
 
 export async function fetchRunCards(runId: number): Promise<LearningCard[]> {
   return request<LearningCard[]>(`/runs/${runId}/cards`);
+}
+
+export async function approveRunCards(runId: number, cardIds: number[]): Promise<LearningRun> {
+  return request<LearningRun>(`/runs/${runId}/cards/approve`, {
+    method: "POST",
+    body: JSON.stringify({ card_ids: cardIds }),
+  });
 }
 
 export async function fetchGraph(knowledgeBaseId?: number | null): Promise<GraphData> {
