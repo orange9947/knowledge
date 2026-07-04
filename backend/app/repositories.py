@@ -231,9 +231,30 @@ class KnowledgeRepository:
 
     def ensure_default_source_configs(self) -> list[models.SourceConfig]:
         existing = self.list_source_configs()
-        if existing:
+        existing_keys = {_source_config_key(config.name, config.url_or_domain) for config in existing}
+        defaults_to_add = [
+            payload
+            for payload in default_source_configs()
+            if _source_config_key(payload.name, payload.url_or_domain) not in existing_keys
+        ]
+        if not defaults_to_add:
             return existing
-        return self.replace_source_configs(default_source_configs())
+        configs = [
+            models.SourceConfig(
+                name=payload.name,
+                type=payload.type,
+                enabled=payload.enabled,
+                url_or_domain=payload.url_or_domain,
+                language_hint=payload.language_hint,
+                crawl_depth=payload.crawl_depth,
+                rate_limit=payload.rate_limit,
+                extractor_rule=payload.extractor_rule,
+            )
+            for payload in defaults_to_add
+        ]
+        self.session.add_all(configs)
+        self.session.commit()
+        return self.list_source_configs()
 
     def replace_source_configs(self, payloads: list[SourceConfigWrite]) -> list[models.SourceConfig]:
         existing = self.list_source_configs()
@@ -630,3 +651,8 @@ def _clean_text_list(values: Iterable[str]) -> list[str]:
         seen.add(key)
         cleaned.append(item)
     return cleaned
+
+
+def _source_config_key(name: str, url_or_domain: str | None) -> str:
+    source = url_or_domain or name
+    return normalize_name(source)

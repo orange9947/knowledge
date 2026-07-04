@@ -73,10 +73,11 @@ def discover_candidates(
     fetch_text: Callable[[str], str] | None = None,
 ) -> list[SourceCandidate]:
     fetcher = fetch_text or default_fetch_text
-    candidates: list[SourceCandidate] = []
+    candidate_groups: list[list[SourceCandidate]] = []
     for config in configs:
         if not config.enabled:
             continue
+        candidates: list[SourceCandidate] = []
         if config.type == "entry_url":
             candidates.extend(_entry_url_candidates(config))
         elif config.type == "domain":
@@ -87,7 +88,10 @@ def discover_candidates(
             candidates.extend(_rss_candidates(keyword, config, fetcher))
         elif config.type == "search_page":
             candidates.extend(_search_page_candidates(keyword, config, fetcher))
-    return sorted(dedupe_candidates(candidates), key=_candidate_rank)[: mode_limit(mode)]
+        ranked_candidates = sorted(dedupe_candidates(candidates), key=_candidate_rank)
+        if ranked_candidates:
+            candidate_groups.append(ranked_candidates)
+    return _select_balanced_candidates(candidate_groups, mode_limit(mode))
 
 
 def parse_feed_entries(
@@ -442,6 +446,25 @@ def _candidate_rank(candidate: SourceCandidate) -> tuple[int, str]:
     if "search" in url or "hn.algolia.com" in site:
         return (4, url)
     return (3, url)
+
+
+def _select_balanced_candidates(candidate_groups: list[list[SourceCandidate]], limit: int) -> list[SourceCandidate]:
+    selected: list[SourceCandidate] = []
+    seen: set[str] = set()
+    max_group_size = max((len(group) for group in candidate_groups), default=0)
+    for offset in range(max_group_size):
+        for group in candidate_groups:
+            if offset >= len(group):
+                continue
+            candidate = group[offset]
+            normalized = normalize_url(candidate.url)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            selected.append(SourceCandidate(**{**candidate.__dict__, "url": normalized}))
+            if len(selected) >= limit:
+                return selected
+    return selected
 
 
 def _text(element: ElementTree.Element, tag: str) -> str | None:

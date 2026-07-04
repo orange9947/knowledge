@@ -92,6 +92,29 @@ def test_discover_candidates_uses_configured_sources():
     assert candidates[0].url == "https://github.com/example/ai-agent"
 
 
+def test_discover_candidates_balances_high_volume_sources():
+    configs = [
+        models.SourceConfig(name="GitHub", type="builtin", enabled=True, url_or_domain="github.com"),
+        models.SourceConfig(name="Docs", type="entry_url", enabled=True, url_or_domain="https://docs.example.com/ai"),
+    ]
+    repositories = ", ".join(
+        f"""
+        {{
+          "full_name": "example/ai-agent-{index}",
+          "html_url": "https://github.com/example/ai-agent-{index}",
+          "description": "AI Agent repository"
+        }}
+        """
+        for index in range(12)
+    )
+    github_payload = f'{{"items": [{repositories}]}}'
+
+    candidates = discover_candidates("AI Agent", configs, "light", fetch_text=lambda _: github_payload)
+
+    assert len(candidates) == 10
+    assert "https://docs.example.com/ai" in [candidate.url for candidate in candidates]
+
+
 def test_discover_candidates_expands_keyword_templates_and_domains():
     configs = [
         models.SourceConfig(name="Juejin", type="domain", enabled=True, url_or_domain="juejin.cn", language_hint="zh"),

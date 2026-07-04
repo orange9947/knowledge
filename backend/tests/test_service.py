@@ -84,7 +84,7 @@ class FakeAIOrchestrator:
         return [AITarget(url="https://docs.example.com/ai-agent-extra", title="AI Agent extra", reason="新增实践")]
 
 
-def test_collect_sources_updates_run_and_persists_sources(tmp_path):
+def test_collect_sources_updates_run_and_persists_sources(tmp_path, monkeypatch):
     engine = create_engine(
         f"sqlite:///{tmp_path / 'service.db'}",
         connect_args={"check_same_thread": False},
@@ -105,6 +105,44 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path):
                 )
             ]
         )
+        github_items = ", ".join(
+            f"""
+            {{
+              "full_name": "example/ai-agent-{index}",
+              "html_url": "https://github.com/example/ai-agent-{index}",
+              "description": "AI Agent repository"
+            }}
+            """
+            for index in range(12)
+        )
+        search_html = """
+        <html><body>
+          <a href="https://juejin.cn/post/7440000000000000000">AI Agent 掘金实践</a>
+          <a href="https://www.zhihu.com/question/123456789/answer/987654321">AI Agent 知乎问答</a>
+          <a href="https://sspai.com/post/88888">AI Agent 工作流</a>
+          <a href="https://www.infoq.cn/article/ai-agent-production-guide">AI Agent 工程实践</a>
+          <a href="https://blog.csdn.net/example/article/details/123456">AI Agent 部署记录</a>
+          <a href="https://cloud.tencent.com/developer/article/2345678">AI Agent 云端实践</a>
+          <a href="https://dev.to/example/ai-agent-guide">AI Agent guide</a>
+          <a href="https://stackoverflow.com/questions/123456/ai-agent-pattern">AI Agent pattern</a>
+          <a href="https://medium.com/@example/ai-agent-for-apps-123">AI Agent for apps</a>
+          <a href="https://www.reddit.com/r/MachineLearning/comments/abc123/ai_agent_in_prod/">AI Agent in prod</a>
+        </body></html>
+        """
+        feed = """
+        <rss><channel>
+          <item><title>AI Agent industry update</title><link>https://news.example.com/ai-agent</link></item>
+        </channel></rss>
+        """
+
+        def fetch_text(url: str) -> str:
+            if "api.github.com" in url:
+                return f'{{"items": [{github_items}]}}'
+            if "rss" in url:
+                return feed
+            return search_html
+
+        monkeypatch.setattr("app.discovery.default_fetch_text", fetch_text)
         run = repository.create_run(LearningRunCreate(keyword="AI Agent", mode="light"))
 
         updated = LearningRunService(session, crawler=FakeCrawler()).collect_sources(run.id)
@@ -112,8 +150,9 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path):
         assert updated is not None
         assert updated.status == "completed"
         sources = repository.list_sources_for_run(run.id)
-        assert len(sources) == 1
-        assert sources[0].status == "success"
+        assert len(sources) == 10
+        assert all(source.status == "success" for source in sources)
+        assert "https://docs.example.com/ai-agent" in [source.url for source in sources]
         cards = repository.list_cards_for_run(run.id)
         assert [card.type for card in cards] == [
             "key_point",

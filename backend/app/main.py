@@ -117,7 +117,7 @@ def test_model_connection(
 
 @app.get("/settings/sources", response_model=list[SourceConfigRead])
 def get_source_settings(session: Session = Depends(get_session)):
-    return KnowledgeRepository(session).list_source_configs()
+    return KnowledgeRepository(session).ensure_default_source_configs()
 
 
 @app.put("/settings/sources", response_model=list[SourceConfigRead])

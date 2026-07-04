@@ -148,7 +148,13 @@ def test_source_settings_replace_existing_configs(client: TestClient):
 
     list_response = client.get("/settings/sources")
     assert list_response.status_code == 200
-    assert len(list_response.json()) == 2
+    names = [item["name"] for item in list_response.json()]
+    assert "AI RSS" in names
+    assert "知乎搜索" in names
+    assert "少数派搜索" in names
+    assert "Medium 搜索" in names
+    assert names.count("GitHub") == 1
+    assert len(names) > 2
 
 
 def test_create_and_list_runs(client: TestClient):

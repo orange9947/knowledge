@@ -27,7 +27,7 @@ class LearningRunService:
             return None
 
         self.repository.update_run_status(run, "running")
-        configs = self.repository.list_source_configs()
+        configs = self.repository.ensure_default_source_configs()
         candidates = discover_candidates(run.keyword, configs, run.mode)
         if not candidates:
             self.repository.update_run_status(
