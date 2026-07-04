@@ -1,5 +1,6 @@
 from collections.abc import Generator
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -51,6 +52,71 @@ def test_model_settings_mask_api_key(client: TestClient):
     assert payload["api_key_reference"] == "model:deepseek:api_key"
     assert payload["api_key_mask"] == "sk-1...cdef"
     assert "1234567890" not in str(payload)
+
+
+def test_model_connection_test_uses_saved_or_inline_api_key(client: TestClient, monkeypatch):
+    client.put(
+        "/settings/model",
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "api_key": "sk-1234567890abcdef",
+            "default_temperature": 0.2,
+            "max_tokens": 4096,
+        },
+    )
+    original_client = httpx.Client
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            request=request,
+            json={"choices": [{"message": {"content": "连接成功"}}]},
+        )
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(transport=httpx.MockTransport(handler)))
+
+    response = client.post(
+        "/settings/model/test",
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "default_temperature": 0,
+            "max_tokens": 1024,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["message"] == "模型连接成功"
+    assert requests[0].url == "https://api.example.com/v1/chat/completions"
+    assert requests[0].headers["authorization"] == "Bearer sk-1234567890abcdef"
+
+
+def test_model_connection_test_requires_api_key(client: TestClient):
+    response = client.post(
+        "/settings/model/test",
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "default_temperature": 0,
+            "max_tokens": 1024,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": False,
+        "message": "请先填写或保存 API 密钥",
+        "model": "test-model",
+        "latency_ms": None,
+    }
 
 
 def test_source_settings_replace_existing_configs(client: TestClient):
@@ -233,3 +299,41 @@ def test_knowledge_base_endpoints_create_default_and_custom_base(client: TestCli
 
     list_response = client.get("/knowledge-bases")
     assert [item["name"] for item in list_response.json()] == ["默认知识库", "Robotics"]
+
+
+def test_delete_knowledge_base_removes_scoped_data(client: TestClient):
+    keep_response = client.post("/knowledge-bases", json={"name": "Keep"})
+    delete_response = client.post("/knowledge-bases", json={"name": "Delete Me"})
+    keep_id = keep_response.json()["id"]
+    delete_id = delete_response.json()["id"]
+
+    keep_run_response = client.post(
+        "/runs",
+        json={"keyword": "Keep RAG", "mode": "light", "knowledge_base_id": keep_id},
+    )
+    delete_run_response = client.post(
+        "/runs",
+        json={"keyword": "Delete RAG", "mode": "light", "knowledge_base_id": delete_id},
+    )
+    keep_run_id = keep_run_response.json()["id"]
+    delete_run_id = delete_run_response.json()["id"]
+    client.post(f"/runs/{keep_run_id}/generate")
+    client.post(f"/runs/{delete_run_id}/generate")
+
+    response = client.delete(f"/knowledge-bases/{delete_id}")
+
+    assert response.status_code == 204
+    bases = client.get("/knowledge-bases").json()
+    assert "Delete Me" not in [item["name"] for item in bases]
+    assert client.get(f"/runs?knowledge_base_id={delete_id}").status_code == 404
+    assert client.get(f"/runs?knowledge_base_id={keep_id}").json()[0]["keyword"] == "Keep RAG"
+    assert client.get(f"/knowledge/graph?knowledge_base_id={delete_id}").status_code == 404
+
+
+def test_delete_last_knowledge_base_is_rejected(client: TestClient):
+    base_id = client.get("/knowledge-bases").json()[0]["id"]
+
+    response = client.delete(f"/knowledge-bases/{base_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "至少需要保留一个知识库"

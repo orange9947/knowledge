@@ -101,6 +101,17 @@ describe("App", () => {
       if (url.endsWith("/settings/model")) {
         return Promise.resolve({ ok: true, json: async () => null });
       }
+      if (url.endsWith("/settings/model/test") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ok: true,
+            message: "模型连接成功",
+            model: "gpt-4.1-mini",
+            latency_ms: 42,
+          }),
+        });
+      }
       if (url.endsWith("/knowledge-bases")) {
         return Promise.resolve({
           ok: true,
@@ -112,8 +123,18 @@ describe("App", () => {
               created_at: "2026-07-04T00:00:00Z",
               updated_at: "2026-07-04T00:00:00Z",
             },
+            {
+              id: 2,
+              name: "机器人",
+              description: "机器人学习",
+              created_at: "2026-07-04T00:00:00Z",
+              updated_at: "2026-07-04T00:00:00Z",
+            },
           ],
         });
+      }
+      if (url.endsWith("/knowledge-bases/2") && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
       }
       if (url.includes("/knowledge/graph")) {
         return Promise.resolve({
@@ -330,6 +351,10 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建知识库" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "测试连接" }));
+    expect(await screen.findByText("模型连接成功（42ms）")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除知识库 机器人" }));
+    expect(await screen.findByText("已删除知识库「机器人」")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "新增来源" }));
     await user.clear(screen.getByLabelText(/来源名称 -/));
     await user.type(screen.getByLabelText(/来源名称 -/), "自定义源");
@@ -351,6 +376,16 @@ describe("App", () => {
         }),
       ]),
     );
+    const modelTestCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/settings/model/test") && init?.method === "POST",
+    );
+    expect(modelTestCall).toBeDefined();
+    expect(JSON.parse(String(modelTestCall?.[1]?.body))).toEqual(
+      expect.objectContaining({
+        base_url: "https://api.openai.com/v1",
+        model: "gpt-4.1-mini",
+      }),
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/runs/7/retention",
       expect.objectContaining({ method: "PATCH" }),
@@ -361,6 +396,10 @@ describe("App", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/sources/1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/knowledge-bases/2",
       expect.objectContaining({ method: "DELETE" }),
     );
   });

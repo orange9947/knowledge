@@ -20,6 +20,8 @@ from app.schemas import (
     LearningRunCreate,
     LearningRunRead,
     ModelConfigRead,
+    ModelConnectionTest,
+    ModelConnectionTestRead,
     ModelConfigWrite,
     RetentionUpdate,
     RunDetailRead,
@@ -28,6 +30,8 @@ from app.schemas import (
     SourceRead,
 )
 from app.services import LearningRunService
+from app.ai import AIOrchestrator
+from app import models
 
 
 @asynccontextmanager
@@ -43,6 +47,8 @@ KNOWLEDGE_BASE_NOT_FOUND = "知识库不存在"
 NODE_NOT_FOUND = "节点不存在"
 RUN_NOT_FOUND = "任务不存在"
 SOURCE_NOT_FOUND = "来源不存在"
+LAST_KNOWLEDGE_BASE_DELETE_FORBIDDEN = "至少需要保留一个知识库"
+MODEL_API_KEY_REQUIRED = "请先填写或保存 API 密钥"
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,6 +83,34 @@ def put_model_settings(
     return KnowledgeRepository(session).save_model_config(payload)
 
 
+@app.post("/settings/model/test", response_model=ModelConnectionTestRead)
+def test_model_connection(
+    payload: ModelConnectionTest,
+    session: Session = Depends(get_session),
+):
+    repository = KnowledgeRepository(session)
+    saved_config = repository.get_model_config()
+    api_key = payload.api_key
+    if not api_key and saved_config is not None:
+        api_key = repository.secret_store.get(saved_config.api_key_reference)
+    if not api_key:
+        return ModelConnectionTestRead(ok=False, message=MODEL_API_KEY_REQUIRED, model=payload.model)
+
+    transient_config = models.ModelConfig(
+        name=payload.name,
+        base_url=payload.base_url,
+        model=payload.model,
+        api_key_reference=None,
+        default_temperature=payload.default_temperature,
+        max_tokens=payload.max_tokens,
+    )
+    ok, message, latency_ms = AIOrchestrator(secret_store=repository.secret_store).test_connection(
+        transient_config,
+        api_key,
+    )
+    return ModelConnectionTestRead(ok=ok, message=message, model=payload.model, latency_ms=latency_ms)
+
+
 @app.get("/settings/sources", response_model=list[SourceConfigRead])
 def get_source_settings(session: Session = Depends(get_session)):
     return KnowledgeRepository(session).list_source_configs()
@@ -101,6 +135,18 @@ def create_knowledge_base(
     session: Session = Depends(get_session),
 ):
     return KnowledgeRepository(session).create_knowledge_base(payload)
+
+
+@app.delete("/knowledge-bases/{knowledge_base_id}", status_code=204)
+def delete_knowledge_base(knowledge_base_id: int, session: Session = Depends(get_session)):
+    repository = KnowledgeRepository(session)
+    knowledge_base = repository.get_knowledge_base(knowledge_base_id)
+    if knowledge_base is None:
+        raise HTTPException(status_code=404, detail=KNOWLEDGE_BASE_NOT_FOUND)
+    if len(repository.list_knowledge_bases()) <= 1:
+        raise HTTPException(status_code=409, detail=LAST_KNOWLEDGE_BASE_DELETE_FORBIDDEN)
+    repository.delete_knowledge_base(knowledge_base)
+    return None
 
 
 @app.post("/runs", response_model=LearningRunRead, status_code=201)

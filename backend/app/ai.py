@@ -1,4 +1,5 @@
 import json
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -140,6 +141,46 @@ class AIOrchestrator:
             data = response.json()
         repaired_content = data["choices"][0]["message"]["content"]
         return _parse_ai_output(repaired_content)
+
+    def test_connection(
+        self,
+        model_config: models.ModelConfig,
+        api_key: str,
+    ) -> tuple[bool, str, int | None]:
+        payload = {
+            "model": model_config.model,
+            "temperature": 0,
+            "max_tokens": min(model_config.max_tokens, 64),
+            "messages": [
+                {"role": "system", "content": "你是连通性测试助手，只返回简短中文。"},
+                {"role": "user", "content": "请回复：连接成功"},
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{model_config.base_url.rstrip('/')}/chat/completions"
+        started = time.perf_counter()
+        try:
+            with httpx.Client(timeout=min(self.timeout, 15.0)) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            if not str(content).strip():
+                return False, "模型返回为空", latency_ms
+            return True, "模型连接成功", latency_ms
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in {401, 403}:
+                return False, f"模型鉴权失败（HTTP {status}）", None
+            return False, f"模型服务返回错误（HTTP {status}）", None
+        except httpx.TimeoutException:
+            return False, "模型连接超时", None
+        except (httpx.HTTPError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return False, "模型连接失败或返回格式异常", None
 
 
 def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:

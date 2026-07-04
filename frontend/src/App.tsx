@@ -26,6 +26,7 @@ import {
   collectRun,
   createKnowledgeBase,
   createRun,
+  deleteKnowledgeBase,
   deleteRun,
   deleteSource,
   exportKnowledge,
@@ -42,6 +43,7 @@ import {
   importKnowledge,
   saveModelSettings,
   saveSourceSettings,
+  testModelConnection,
   updateRunRetention,
   updateSourceRetention,
   type GraphData,
@@ -52,6 +54,7 @@ import {
   type LearningCard,
   type LearningRun,
   type ModelSettings,
+  type ModelSettingsInput,
   type SourceRecord,
   type SourceSettings,
   type SourceSettingsInput,
@@ -356,15 +359,26 @@ function App() {
     setBusy(true);
     setMessage("正在保存模型设置...");
     try {
-      const saved = await saveModelSettings({
-        ...modelForm,
-        api_key: modelForm.api_key || undefined,
-      });
+      const saved = await saveModelSettings(toModelInput(modelForm));
       setModelSettings(saved);
       setModelForm((current) => ({ ...current, api_key: "" }));
       setMessage("模型设置已保存");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存模型设置失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleTestModel() {
+    setBusy(true);
+    setMessage("正在测试模型连接...");
+    try {
+      const result = await testModelConnection(toModelInput(modelForm));
+      const latency = result.latency_ms === null ? "" : `（${result.latency_ms}ms）`;
+      setMessage(`${result.message}${latency}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "测试模型连接失败");
     } finally {
       setBusy(false);
     }
@@ -434,6 +448,33 @@ function App() {
       setMessage(`已选择知识库「${created.name}」`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "创建知识库失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteKnowledgeBase(base: KnowledgeBase) {
+    if (!window.confirm(`确定删除知识库「${knowledgeBaseName(base)}」及其全部任务、来源和图谱吗？`)) return;
+    setBusy(true);
+    try {
+      await deleteKnowledgeBase(base.id);
+      const bases = await fetchKnowledgeBases();
+      const nextBaseId = bases[0]?.id ?? null;
+      setKnowledgeBases(bases);
+      setActiveKnowledgeBaseId(nextBaseId);
+      setCards([]);
+      setRunSources([]);
+      setSelectedNode(null);
+      setSelectedRun(null);
+      if (nextBaseId) {
+        await refreshActiveKnowledgeBase(nextBaseId);
+      } else {
+        setRuns([]);
+        setGraph({ nodes: [], edges: [] });
+      }
+      setMessage(`已删除知识库「${knowledgeBaseName(base)}」`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "删除知识库失败");
     } finally {
       setBusy(false);
     }
@@ -750,6 +791,7 @@ function App() {
               knowledgeBases={knowledgeBases}
               newKnowledgeBaseName={newKnowledgeBaseName}
               onCreate={handleCreateKnowledgeBase}
+              onDelete={handleDeleteKnowledgeBase}
               onNameChange={setNewKnowledgeBaseName}
               onSelect={setActiveKnowledgeBaseId}
             />
@@ -759,6 +801,7 @@ function App() {
               modelSettings={modelSettings}
               onModelFormChange={setModelForm}
               onSaveModel={handleSaveModel}
+              onTestModel={handleTestModel}
             />
             <SourcesPanel
               busy={busy}
@@ -1156,12 +1199,14 @@ function SettingsPanel({
   modelSettings,
   onModelFormChange,
   onSaveModel,
+  onTestModel,
 }: {
   busy: boolean;
   modelForm: typeof emptyModelForm;
   modelSettings: ModelSettings | null;
   onModelFormChange: (value: typeof emptyModelForm | ((current: typeof emptyModelForm) => typeof emptyModelForm)) => void;
   onSaveModel: () => void;
+  onTestModel: () => void;
 }) {
   return (
     <div className="panel settings-panel">
@@ -1195,10 +1240,16 @@ function SettingsPanel({
             onChange={(event) => onModelFormChange((current) => ({ ...current, api_key: event.target.value }))}
           />
         </label>
-        <button className="secondary-button" type="button" onClick={onSaveModel} disabled={busy}>
-          <Save size={16} />
-          <span>保存模型</span>
-        </button>
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={onTestModel} disabled={busy}>
+            <Activity size={16} />
+            <span>测试连接</span>
+          </button>
+          <button className="secondary-button" type="button" onClick={onSaveModel} disabled={busy}>
+            <Save size={16} />
+            <span>保存模型</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1210,6 +1261,7 @@ function KnowledgeBasePanel({
   knowledgeBases,
   newKnowledgeBaseName,
   onCreate,
+  onDelete,
   onNameChange,
   onSelect,
 }: {
@@ -1218,6 +1270,7 @@ function KnowledgeBasePanel({
   knowledgeBases: KnowledgeBase[];
   newKnowledgeBaseName: string;
   onCreate: () => void;
+  onDelete: (base: KnowledgeBase) => void;
   onNameChange: (value: string) => void;
   onSelect: (value: number) => void;
 }) {
@@ -1246,15 +1299,25 @@ function KnowledgeBasePanel({
       </div>
       <div className="knowledge-list">
         {knowledgeBases.map((item) => (
-          <button
+          <div
             className={item.id === activeKnowledgeBaseId ? "knowledge-row selected" : "knowledge-row"}
             key={item.id}
-            onClick={() => onSelect(item.id)}
-            type="button"
           >
-            <strong>{knowledgeBaseName(item)}</strong>
-            <span>{item.description || "暂无描述"}</span>
-          </button>
+            <button className="knowledge-select-row" onClick={() => onSelect(item.id)} type="button">
+              <strong>{knowledgeBaseName(item)}</strong>
+              <span>{item.description || "暂无描述"}</span>
+            </button>
+            <button
+              aria-label={`删除知识库 ${knowledgeBaseName(item)}`}
+              className="icon-action danger"
+              disabled={busy}
+              onClick={() => onDelete(item)}
+              title="删除知识库"
+              type="button"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
         ))}
       </div>
     </div>
@@ -1475,6 +1538,13 @@ function tagLabel(tag: string) {
 
 function knowledgeBaseName(base: KnowledgeBase) {
   return baseNameLabels[base.name] ?? base.name;
+}
+
+function toModelInput(modelForm: typeof emptyModelForm): ModelSettingsInput {
+  return {
+    ...modelForm,
+    api_key: modelForm.api_key || undefined,
+  };
 }
 
 function toSourceDrafts(sourceSettings: SourceSettings[]): SourceDraft[] {

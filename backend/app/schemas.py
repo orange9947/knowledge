@@ -82,6 +82,22 @@ class ModelConfigRead(BaseModel):
     max_tokens: int
 
 
+class ModelConnectionTest(BaseModel):
+    name: str = Field(default="默认配置", min_length=1, max_length=120)
+    base_url: str = Field(min_length=1)
+    model: str = Field(min_length=1, max_length=160)
+    api_key: str | None = Field(default=None, min_length=1)
+    default_temperature: float = Field(default=0.2, ge=0, le=2)
+    max_tokens: int = Field(default=1024, ge=16, le=200000)
+
+
+class ModelConnectionTestRead(BaseModel):
+    ok: bool
+    message: str
+    model: str
+    latency_ms: int | None = None
+
+
 class SourceConfigWrite(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     type: Literal["builtin", "rss", "domain", "entry_url", "search_page"]

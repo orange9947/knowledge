@@ -84,6 +84,26 @@ class KnowledgeRepository:
     def get_knowledge_base(self, knowledge_base_id: int) -> models.KnowledgeBase | None:
         return self.session.get(models.KnowledgeBase, knowledge_base_id)
 
+    def delete_knowledge_base(self, knowledge_base: models.KnowledgeBase) -> None:
+        for run in list(self.list_runs(knowledge_base.id)):
+            source_ids = [source.id for source in self.list_sources_for_run(run.id)]
+            self._remove_source_references(source_ids)
+            self.session.delete(run)
+        for edge in list(
+            self.session.scalars(
+                select(models.KnowledgeEdge).where(models.KnowledgeEdge.knowledge_base_id == knowledge_base.id)
+            )
+        ):
+            self.session.delete(edge)
+        for node in list(
+            self.session.scalars(
+                select(models.KnowledgeNode).where(models.KnowledgeNode.knowledge_base_id == knowledge_base.id)
+            )
+        ):
+            self.session.delete(node)
+        self.session.delete(knowledge_base)
+        self.session.commit()
+
     def list_knowledge_bases(self) -> list[models.KnowledgeBase]:
         self.ensure_default_knowledge_base()
         statement = select(models.KnowledgeBase).order_by(models.KnowledgeBase.created_at.asc(), models.KnowledgeBase.id.asc())

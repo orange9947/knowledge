@@ -115,6 +115,13 @@ export type ModelSettingsInput = {
   max_tokens: number;
 };
 
+export type ModelConnectionTestResult = {
+  ok: boolean;
+  message: string;
+  model: string;
+  latency_ms: number | null;
+};
+
 export type SourceSettings = {
   id: number;
   name: string;
@@ -174,6 +181,13 @@ export async function saveModelSettings(payload: ModelSettingsInput): Promise<Mo
   });
 }
 
+export async function testModelConnection(payload: ModelSettingsInput): Promise<ModelConnectionTestResult> {
+  return request<ModelConnectionTestResult>("/settings/model/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchSourceSettings(): Promise<SourceSettings[]> {
   return request<SourceSettings[]>("/settings/sources");
 }
@@ -193,6 +207,12 @@ export async function createKnowledgeBase(name: string, description?: string): P
   return request<KnowledgeBase>("/knowledge-bases", {
     method: "POST",
     body: JSON.stringify({ name, description: description || null }),
+  });
+}
+
+export async function deleteKnowledgeBase(knowledgeBaseId: number): Promise<void> {
+  return request<void>(`/knowledge-bases/${knowledgeBaseId}`, {
+    method: "DELETE",
   });
 }
 
