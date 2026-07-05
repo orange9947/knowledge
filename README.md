@@ -46,11 +46,33 @@ npm run dev
 
 桌面端封装应由 Electron 启动本地 FastAPI 后端，安卓端封装应由 Capacitor 承载同一套前端，并在 App 内启动本地 Python/FastAPI 后端。独立运行不需要自建服务器，但抓取网页、模型连接测试、AI 阅读分析和图谱助手联网补充仍然需要网络，因为它们会访问学习来源和模型 API。
 
+### Windows 桌面端打开方式
+
+当前桌面端是 Electron 外壳加本机 Python 后端，不是需要服务器部署的网站。打开 Windows 版有两种方式：
+
+1. 推荐方式：在 GitHub 仓库进入 `Actions`，打开 `Windows Desktop Package`，等待运行完成后下载 `windows-desktop-package`。解压后运行 `AI 学习知识图谱-Setup-0.1.0-x64.exe` 安装版，或运行 `AI 学习知识图谱-Portable-0.1.0-x64.exe` 便携版。
+2. 本地 Windows 构建：在 Windows 上安装 Node.js 22、Python 3.12 和 Git，然后执行下面的命令生成安装包。
+
+```powershell
+git clone https://github.com/orange9947/knowledge.git
+cd knowledge
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e "backend[dev]" pyinstaller
+npm ci --prefix frontend
+npm ci --prefix desktop
+npm run build:desktop:win
+```
+
+生成结果在 `desktop\dist\`。安装版和便携版启动后都会自动启动本机后端，数据保存在 Windows 用户数据目录里，不需要你自己开服务器。
+
 ### 桌面端开发运行
 
 ```bash
 npm install --prefix desktop
 npm run build:frontend
+npm run build:backend:desktop
 npm --prefix desktop run dev
 ```
 
