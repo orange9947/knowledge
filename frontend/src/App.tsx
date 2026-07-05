@@ -74,7 +74,7 @@ import {
   type SourceSettingsInput,
 } from "./api";
 import { graphNodeTypes, prepareGraphData, type GraphViewMode, type PreparedGraphNode } from "./graphUtils";
-import { getRuntimeName } from "./platform";
+import { getApiBaseUrl, getRuntimeName } from "./platform";
 
 const ANDROID_API_BOOT_ATTEMPTS = 16;
 const ANDROID_API_BOOT_DELAY_MS = 500;
@@ -396,6 +396,7 @@ function App() {
   const [message, setMessage] = useState<string>("准备就绪");
   const [busy, setBusy] = useState(false);
   const runtimeName = getRuntimeName();
+  const apiBaseUrl = getApiBaseUrl();
 
   useEffect(() => {
     let mounted = true;
@@ -495,7 +496,7 @@ function App() {
     }));
   }, [sources]);
 
-  const healthLabel = health ? `API ${health.version}` : healthError ? "API 离线" : "检查中";
+  const healthLabel = health ? `API ${health.version}` : healthError ? `API 离线 ${apiBaseUrl}` : "检查中";
   const filteredRuns = useMemo(() => {
     const keyword = historyFilter.trim().toLowerCase();
     return runs.filter((run) => {
