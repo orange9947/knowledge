@@ -42,6 +42,39 @@ npm run dev
 
 前端地址是 `http://localhost:5173`，接口请求会代理到 `http://localhost:8000`。
 
+## 独立运行封装
+
+桌面端封装应由 Electron 启动本地 FastAPI 后端，安卓端封装应由 Capacitor 承载同一套前端，并在 App 内启动本地 Python/FastAPI 后端。独立运行不需要自建服务器，但抓取网页、模型连接测试、AI 阅读分析和图谱助手联网补充仍然需要网络，因为它们会访问学习来源和模型 API。
+
+### 桌面端开发运行
+
+```bash
+npm install --prefix desktop
+npm run build:frontend
+npm --prefix desktop run dev
+```
+
+### 桌面端后端打包
+
+```bash
+cd backend
+pyinstaller pyinstaller.spec
+```
+
+### 安卓端调试包
+
+```bash
+npm install --prefix frontend
+cd frontend
+npx cap sync android
+cd android
+./gradlew assembleDebug
+```
+
+### 数据位置
+
+桌面端数据应位于系统用户数据目录。安卓端数据应位于 App 私有目录。模型 API Key 写入本地 secrets 文件，不会写入导出的知识库 JSON。
+
 ## 使用指南
 
 1. 打开前端页面。
@@ -123,6 +156,14 @@ cd frontend
 npm test -- --run
 npm run build
 ```
+
+封装验证：
+
+```bash
+./scripts/verify-packaging.sh
+```
+
+该脚本会运行后端测试、前端测试和前端构建；如果存在桌面端或安卓端项目，也会尝试执行对应平台检查。不存在的平台项目会打印明确跳过原因。发布 standalone 前还需要按脚本末尾清单确认：模型配置测试、知识库增删切换隔离、来源配置、自定义来源、学习运行、AI 分析、卡片审批入图谱、历史保留删除、图谱助手和导入导出。
 
 ## 已知限制
 

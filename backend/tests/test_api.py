@@ -962,3 +962,54 @@ def test_graph_assistant_web_supplement_can_be_toggled(client: TestClient, monke
     assert payload["used_web"] is True
     assert any("docs.example.com/agent" in url for url in requested_urls)
     assert payload["web_references"][0]["url"] == "https://docs.example.com/agent"
+
+
+def test_export_import_endpoints_round_trip_without_model_secret(client: TestClient):
+    client.put(
+        "/settings/model",
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.example.com/v1",
+            "model": "test-model",
+            "api_key": "sk-portable-secret-123456",
+            "default_temperature": 0,
+            "max_tokens": 4096,
+        },
+    )
+    base_response = client.post(
+        "/knowledge-bases",
+        json={"name": "Portable API", "description": "Export/import smoke", "learning_prompt": "关注可迁移数据"},
+    )
+    knowledge_base_id = base_response.json()["id"]
+    run_response = client.post(
+        "/runs",
+        json={"keyword": "Portable RAG", "mode": "light", "knowledge_base_id": knowledge_base_id},
+    )
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+    cards = client.get(f"/runs/{run_id}/cards").json()
+    approve_response = client.post(
+        f"/runs/{run_id}/cards/approve",
+        json={"card_ids": [cards[0]["id"]]},
+    )
+    assert approve_response.status_code == 200
+
+    export_response = client.get(f"/export?knowledge_base_id={knowledge_base_id}")
+
+    assert export_response.status_code == 200
+    exported = export_response.json()
+    serialized = str(exported)
+    assert "sk-portable-secret-123456" not in serialized
+    assert "api_key" not in serialized
+    assert [item["name"] for item in exported["knowledge_bases"]] == ["Portable API"]
+    assert [item["keyword"] for item in exported["runs"]] == ["Portable RAG"]
+    assert len(exported["cards"]) == 6
+    assert len(exported["nodes"]) >= 1
+
+    import_response = client.post("/import", json=exported)
+
+    assert import_response.status_code == 200
+    imported = import_response.json()
+    assert any(item["name"] == "Portable API" for item in imported["knowledge_bases"])
+    assert [item["keyword"] for item in imported["runs"]].count("Portable RAG") == 2
+    assert len(imported["cards"]) >= 12
