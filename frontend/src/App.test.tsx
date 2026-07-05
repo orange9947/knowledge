@@ -200,6 +200,57 @@ describe("App", () => {
     expect(document.querySelector(".app-shell")).toHaveClass("runtime-desktop");
   });
 
+  it("retries Android local API while the embedded backend is starting", async () => {
+    window.__AILKG_RUNTIME__ = {
+      platform: "android",
+    };
+    let healthAttempts = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      expect(url.startsWith("http://127.0.0.1:43126")).toBe(true);
+      if (url.endsWith("/health")) {
+        healthAttempts += 1;
+        if (healthAttempts === 1) {
+          return Promise.reject(new TypeError("Failed to fetch"));
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            app_name: "AI 学习知识图谱",
+            version: "0.1.0",
+            database: "ready",
+          }),
+        });
+      }
+      if (url.endsWith("/knowledge-bases")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: 1,
+              name: "默认知识库",
+              description: "默认知识库",
+              learning_prompt: null,
+              created_at: "2026-07-04T00:00:00Z",
+              updated_at: "2026-07-04T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/settings/model")) return Promise.resolve({ ok: true, json: async () => null });
+      if (url.endsWith("/knowledge/graph")) return Promise.resolve({ ok: true, json: async () => ({ nodes: [], edges: [] }) });
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("API 0.1.0")).toBeInTheDocument();
+    expect(healthAttempts).toBe(2);
+    expect(document.querySelector(".app-shell")).toHaveClass("runtime-android");
+  });
+
   it("switches sidebar buttons to matching workspace panels", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(true);

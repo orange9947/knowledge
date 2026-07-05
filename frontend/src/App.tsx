@@ -76,6 +76,9 @@ import {
 import { graphNodeTypes, prepareGraphData, type GraphViewMode, type PreparedGraphNode } from "./graphUtils";
 import { getRuntimeName } from "./platform";
 
+const ANDROID_API_BOOT_ATTEMPTS = 16;
+const ANDROID_API_BOOT_DELAY_MS = 500;
+
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
 type SourceDraft = SourceSettingsInput & { id: number };
@@ -331,6 +334,26 @@ const emptyNodeForm = {
 };
 type NodeFormState = typeof emptyNodeForm;
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchHealthWithBootRetry(runtimeName: string): Promise<HealthResponse> {
+  const attempts = runtimeName === "android" ? ANDROID_API_BOOT_ATTEMPTS : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetchHealth();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await delay(ANDROID_API_BOOT_DELAY_MS);
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("API 不可用");
+}
+
 const navItems: Array<{ key: ViewKey; label: string; title: string; icon: typeof BookOpen }> = [
   { key: "learn", label: "学习", title: "学习工作区", icon: BookOpen },
   { key: "graph", label: "图谱", title: "知识图谱", icon: Database },
@@ -379,8 +402,8 @@ function App() {
 
     async function loadInitialData() {
       try {
-        const [healthData, modelData, sourceData, bases] = await Promise.all([
-          fetchHealth(),
+        const healthData = await fetchHealthWithBootRetry(runtimeName);
+        const [modelData, sourceData, bases] = await Promise.all([
           fetchModelSettings(),
           fetchSourceSettings(),
           fetchKnowledgeBases(),

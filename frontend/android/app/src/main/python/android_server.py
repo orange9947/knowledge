@@ -1,12 +1,14 @@
 import os
 import threading
+import traceback
 
 
 _server_thread = None
+_startup_error = None
 
 
 def start(data_dir: str, port: int) -> None:
-    global _server_thread
+    global _server_thread, _startup_error
     if _server_thread and _server_thread.is_alive():
         return
 
@@ -20,7 +22,20 @@ def start(data_dir: str, port: int) -> None:
         "http://127.0.0.1:43126,capacitor://localhost"
     )
 
-    from app.local_server import run_local_server
+    def run() -> None:
+        global _startup_error
+        try:
+            from app.local_server import run_local_server
 
-    _server_thread = threading.Thread(target=run_local_server, kwargs={"port": port}, daemon=True)
+            run_local_server(port=port)
+        except Exception:
+            _startup_error = traceback.format_exc()
+            print(_startup_error, flush=True)
+
+    _startup_error = None
+    _server_thread = threading.Thread(target=run, daemon=True)
     _server_thread.start()
+
+
+def startup_error() -> str | None:
+    return _startup_error
