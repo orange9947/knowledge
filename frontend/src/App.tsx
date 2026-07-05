@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Graph } from "@antv/g6";
 import {
   Activity,
@@ -6,14 +6,17 @@ import {
   CirclePlus,
   Database,
   Download,
+  FileText,
   GitBranch,
   History,
   KeyRound,
   Library,
+  Maximize2,
   MessageSquareText,
   Pin,
   PinOff,
   Play,
+  RotateCcw,
   Save,
   Search,
   Settings,
@@ -334,6 +337,10 @@ const emptyNodeForm = {
 };
 type NodeFormState = typeof emptyNodeForm;
 
+type ExpandedLearningItem =
+  | { kind: "card"; item: LearningCard }
+  | { kind: "source"; item: SourceRecord };
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -393,6 +400,8 @@ function App() {
   const [assistantCreateCandidates, setAssistantCreateCandidates] = useState(true);
   const [assistantResponse, setAssistantResponse] = useState<AssistantResponse | null>(null);
   const [assistantSelectedCardIds, setAssistantSelectedCardIds] = useState<number[]>([]);
+  const [expandedLearningItem, setExpandedLearningItem] = useState<ExpandedLearningItem | null>(null);
+  const [graphOverviewSignal, setGraphOverviewSignal] = useState(0);
   const [message, setMessage] = useState<string>("准备就绪");
   const [busy, setBusy] = useState(false);
   const runtimeName = getRuntimeName();
@@ -775,6 +784,15 @@ function App() {
     setMessage(candidateIds.length === 0 ? "没有待加入图谱的卡片" : `已选择 ${candidateIds.length} 张待加入卡片`);
   }
 
+  function handleClearCurrentLearningCards() {
+    setCards([]);
+    setRunSources([]);
+    setSelectedCardIds([]);
+    setExpandedLearningItem(null);
+    setSelectedRun(null);
+    setMessage("已清空本次搜索卡片显示，历史记录仍会保留");
+  }
+
   async function handleSummarizeRun() {
     if (!selectedRun) {
       setMessage("请先运行或选择一个任务");
@@ -836,7 +854,7 @@ function App() {
     }
   }
 
-  async function handleSelectNode(nodeId: number) {
+  const handleSelectNode = useCallback(async (nodeId: number) => {
     if (!activeKnowledgeBaseId) return;
     setMessage("正在加载节点详情...");
     try {
@@ -848,7 +866,15 @@ function App() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加载节点详情失败");
     }
-  }
+  }, [activeKnowledgeBaseId]);
+
+  const handleResetGraphOverview = useCallback(() => {
+    setSelectedNode(null);
+    setNodeForm(emptyNodeForm);
+    setIsEditingNode(false);
+    setGraphOverviewSignal((current) => current + 1);
+    setMessage("已返回图谱整体结构");
+  }, []);
 
   function handleStartNewNode() {
     setSelectedNode(null);
@@ -1177,6 +1203,8 @@ function App() {
                 modelForm={modelForm}
                 modelSettings={modelSettings}
                 onApproveSelected={handleApproveSelectedCards}
+                onClearCurrent={handleClearCurrentLearningCards}
+                onOpenCard={(card) => setExpandedLearningItem({ kind: "card", item: card })}
                 onSelectAllCandidates={handleSelectAllCandidateCards}
                 onToggleCardSelection={handleToggleCardSelection}
                 onModelFormChange={setModelForm}
@@ -1190,6 +1218,7 @@ function App() {
                 busy={busy}
                 onClearText={handleClearSourceText}
                 onDeleteSource={handleDeleteSource}
+                onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
                 onToggleRetention={handleToggleSourceRetention}
                 runSources={runSources}
               />
@@ -1223,6 +1252,7 @@ function App() {
               onDeleteNode={handleDeleteNode}
               onEditNode={handleEditNode}
               onNodeFormChange={handleNodeFormChange}
+              onResetOverview={handleResetGraphOverview}
               onSaveNode={handleSaveNode}
               onSelectNode={handleSelectNode}
               onSetAssistantAllowWeb={setAssistantAllowWeb}
@@ -1231,6 +1261,7 @@ function App() {
               onSetAssistantQuestion={setAssistantQuestion}
               onStartNewNode={handleStartNewNode}
               onToggleAssistantCandidate={handleToggleAssistantCandidate}
+              overviewSignal={graphOverviewSignal}
               selectedNode={selectedNode}
             />
           </section>
@@ -1292,6 +1323,10 @@ function App() {
             />
           </section>
         ) : null}
+        <LearningItemDialog
+          item={expandedLearningItem}
+          onClose={() => setExpandedLearningItem(null)}
+        />
       </main>
     </div>
   );
@@ -1401,6 +1436,8 @@ function CardsPanel({
   modelForm,
   modelSettings,
   onApproveSelected,
+  onClearCurrent,
+  onOpenCard,
   onModelFormChange,
   onSelectAllCandidates,
   onSaveModel,
@@ -1421,6 +1458,8 @@ function CardsPanel({
   onSummarize: () => void;
   onTestModel: () => void;
   onToggleCardSelection: (cardId: number, selected: boolean) => void;
+  onClearCurrent: () => void;
+  onOpenCard: (card: LearningCard) => void;
   selectedCardIds: number[];
   selectedRun: LearningRun | null;
 }) {
@@ -1445,6 +1484,16 @@ function CardsPanel({
             type="button"
           >
             <CirclePlus size={18} />
+          </button>
+          <button
+            aria-label="清空本次搜索卡片"
+            className="icon-action"
+            disabled={busy || (cards.length === 0 && !selectedRun)}
+            onClick={onClearCurrent}
+            title="清空本次搜索卡片"
+            type="button"
+          >
+            <RotateCcw size={18} />
           </button>
           <button
             aria-label="加入选中知识"
@@ -1478,45 +1527,93 @@ function CardsPanel({
       />
       <KeywordHints
         cards={keywordHintCards}
+        onOpenCard={onOpenCard}
         onToggleCardSelection={onToggleCardSelection}
         selectedCardIds={selectedCardIds}
       />
-      <div className="card-list">
-        {(analysisCards.length > 0 ? analysisCards : learningCards).map((card) => (
-          <article className="learning-card" key={card.title}>
-            <div className="card-title-row">
-              {"id" in card ? (
-                <input
-                  aria-label={`选择知识卡片 ${card.title}`}
-                  checked={selectedCardIds.includes(card.id)}
-                  disabled={card.approval_status !== "candidate"}
-                  type="checkbox"
-                  onChange={(event) => onToggleCardSelection(card.id, event.target.checked)}
-                />
-              ) : null}
-              <span>{cardTypeLabel(card.type)}</span>
-              {"approval_status" in card ? (
-                <small className={`approval-badge ${card.approval_status}`}>
-                  {card.approval_status === "approved" ? "已加入图谱" : "待加入图谱"}
-                </small>
-              ) : null}
-            </div>
-            <h3>{card.title}</h3>
-            <p>{"summary" in card ? card.summary : card.body}</p>
-            {"details" in card && card.details ? <small>{card.details}</small> : null}
-          </article>
-        ))}
-      </div>
+      <section className="analysis-section" aria-label="AI 知识提炼">
+        <div className="analysis-section-heading">
+          <div>
+            <strong>AI 知识提炼</strong>
+            <span>{analysisCards.length > 0 ? `${analysisCards.length} 张卡片` : "等待模型阅读素材"}</span>
+          </div>
+          <FileText size={17} aria-hidden="true" />
+        </div>
+        <div className="card-list">
+          {analysisCards.length > 0 ? (
+            analysisCards.map((card) => (
+              <LearningCardItem
+                card={card}
+                key={card.id}
+                onOpen={onOpenCard}
+                onToggleCardSelection={onToggleCardSelection}
+                selected={selectedCardIds.includes(card.id)}
+              />
+            ))
+          ) : (
+            learningCards.map((card) => (
+              <article className="learning-card placeholder-card" key={card.title}>
+                <div className="card-title-row">
+                  <span>{card.type}</span>
+                </div>
+                <h3>{card.title}</h3>
+                <p>{card.body}</p>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
     </div>
+  );
+}
+
+function LearningCardItem({
+  card,
+  onOpen,
+  onToggleCardSelection,
+  selected,
+}: {
+  card: LearningCard;
+  onOpen: (card: LearningCard) => void;
+  onToggleCardSelection: (cardId: number, selected: boolean) => void;
+  selected: boolean;
+}) {
+  return (
+    <article className={`learning-card ${card.approval_status}`}>
+      <div className="card-title-row">
+        <input
+          aria-label={`选择知识卡片 ${card.title}`}
+          checked={selected}
+          disabled={card.approval_status !== "candidate"}
+          type="checkbox"
+          onChange={(event) => onToggleCardSelection(card.id, event.target.checked)}
+        />
+        <span>{cardTypeLabel(card.type)}</span>
+        <small className={`approval-badge ${card.approval_status}`}>
+          {card.approval_status === "approved" ? "已加入图谱" : "待加入图谱"}
+        </small>
+      </div>
+      <button className="card-open-button" type="button" onClick={() => onOpen(card)}>
+        <h3>{card.title}</h3>
+        <p>{card.summary}</p>
+        {card.details ? <small>{card.details}</small> : null}
+        <span className="open-hint">
+          <Maximize2 size={13} />
+          <span>查看详情</span>
+        </span>
+      </button>
+    </article>
   );
 }
 
 function KeywordHints({
   cards,
+  onOpenCard,
   onToggleCardSelection,
   selectedCardIds,
 }: {
   cards: LearningCard[];
+  onOpenCard: (card: LearningCard) => void;
   onToggleCardSelection: (cardId: number, selected: boolean) => void;
   selectedCardIds: number[];
 }) {
@@ -1545,13 +1642,57 @@ function KeywordHints({
                   {card.approval_status === "approved" ? "已加入" : "待加入"}
                 </small>
               </div>
-              <p>{card.summary}</p>
-              {card.details ? <small>{card.details}</small> : null}
+              <button className="keyword-open-button" type="button" onClick={() => onOpenCard(card)}>
+                <p>{card.summary}</p>
+                {card.details ? <small>{card.details}</small> : null}
+              </button>
             </article>
           ))
         )}
       </div>
     </section>
+  );
+}
+
+function LearningItemDialog({ item, onClose }: { item: ExpandedLearningItem | null; onClose: () => void }) {
+  if (!item) return null;
+  const isCard = item.kind === "card";
+  const title = isCard ? item.item.title : item.item.title || item.item.site || item.item.url;
+  const subtitle = isCard ? cardTypeLabel(item.item.type) : item.item.site || item.item.url;
+  const primaryText = isCard ? item.item.summary : item.item.extracted_text || item.item.snippet || item.item.status_reason || "暂无正文。";
+  const secondaryText = isCard ? item.item.details : item.item.snippet;
+
+  return (
+    <div className="detail-modal" role="dialog" aria-modal="true" aria-label={isCard ? "知识卡片详情" : "素材详情"}>
+      <button className="detail-modal-backdrop" aria-label="关闭详情遮罩" type="button" onClick={onClose} />
+      <article className="detail-modal-card">
+        <div className="detail-modal-header">
+          <div>
+            <p className="eyebrow">{isCard ? "AI 知识提炼" : "搜索素材"}</p>
+            <h3>{title}</h3>
+          </div>
+          <button className="icon-action" aria-label="关闭详情" type="button" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="detail-modal-meta">
+          <span>{subtitle}</span>
+          {isCard ? (
+            <span>{item.item.approval_status === "approved" ? "已加入图谱" : "待加入图谱"}</span>
+          ) : (
+            <span>{statusLabel(item.item.status)}</span>
+          )}
+        </div>
+        <p>{primaryText}</p>
+        {secondaryText ? <small>{secondaryText}</small> : null}
+        {!isCard ? (
+          <a className="secondary-button detail-source-link" href={item.item.url} target="_blank" rel="noreferrer">
+            <FileText size={16} />
+            <span>打开原文</span>
+          </a>
+        ) : null}
+      </article>
+    </div>
   );
 }
 
@@ -1637,6 +1778,7 @@ function GraphPanel({
   onDeleteNode,
   onEditNode,
   onNodeFormChange,
+  onResetOverview,
   onSaveNode,
   onSelectNode,
   onSetAssistantAllowWeb,
@@ -1645,6 +1787,7 @@ function GraphPanel({
   onSetAssistantQuestion,
   onStartNewNode,
   onToggleAssistantCandidate,
+  overviewSignal,
   selectedNode,
 }: {
   assistantAllowWeb: boolean;
@@ -1664,6 +1807,7 @@ function GraphPanel({
   onDeleteNode: () => void;
   onEditNode: () => void;
   onNodeFormChange: (patch: Partial<NodeFormState>) => void;
+  onResetOverview: () => void;
   onSaveNode: () => void;
   onSelectNode: (nodeId: number) => void;
   onSetAssistantAllowWeb: (value: boolean) => void;
@@ -1672,6 +1816,7 @@ function GraphPanel({
   onSetAssistantQuestion: (value: string) => void;
   onStartNewNode: () => void;
   onToggleAssistantCandidate: (cardId: number, selected: boolean) => void;
+  overviewSignal: number;
   selectedNode: KnowledgeNode | null;
 }) {
   const [viewMode, setViewMode] = useState<GraphViewMode>("explore");
@@ -1687,6 +1832,13 @@ function GraphPanel({
     viewMode,
   }), [graph, graphDepth, graphQuery, graphType, selectedNode?.id, viewMode]);
   const relatedEdges = selectedNode ? relatedEdgesForNode(graph, selectedNode.id) : [];
+  const handleReturnOverview = useCallback(() => {
+    setViewMode("explore");
+    setGraphQuery("");
+    setGraphType("all");
+    setGraphDepth(2);
+    onResetOverview();
+  }, [onResetOverview]);
 
   return (
     <div className="panel graph-panel">
@@ -1746,6 +1898,10 @@ function GraphPanel({
           />
           <strong>{graphDepth}</strong>
         </label>
+        <button className="secondary-button overview-button" type="button" onClick={handleReturnOverview}>
+          <RotateCcw size={16} />
+          <span>返回概览</span>
+        </button>
       </div>
       <div className="graph-workbench">
         <div className={viewMode === "explore" ? "graph-canvas vault-shell" : "graph-canvas"} aria-label="知识图谱工作台">
@@ -1764,9 +1920,19 @@ function GraphPanel({
                 edges={preparedGraph.edges}
                 nodes={preparedGraph.nodes}
                 onSelectNode={onSelectNode}
+                overviewSignal={overviewSignal}
                 selectedNodeId={selectedNode?.id ?? null}
                 viewMode={viewMode}
               />
+              <button
+                aria-label="返回整个结构"
+                className="graph-overview-fab"
+                type="button"
+                onClick={handleReturnOverview}
+              >
+                <RotateCcw size={16} />
+                <span>概览</span>
+              </button>
               <div className={viewMode === "explore" ? "graph-node-list vault-index" : "graph-node-list"} aria-label="图谱节点列表">
                 {preparedGraph.nodes.map((node) => (
                   <button
@@ -1863,17 +2029,20 @@ function G6GraphCanvas({
   edges,
   nodes,
   onSelectNode,
+  overviewSignal,
   selectedNodeId,
   viewMode,
 }: {
   edges: GraphData["edges"];
   nodes: PreparedGraphNode[];
   onSelectNode: (nodeId: number) => void;
+  overviewSignal: number;
   selectedNodeId: number | null;
   viewMode: GraphViewMode;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<Graph | null>(null);
+  const renderedRef = useRef(false);
   const data = useMemo(() => ({
     nodes: nodes.map((node) => ({
       id: String(node.id),
@@ -1966,7 +2135,12 @@ function G6GraphCanvas({
           labelText: "",
         },
       },
-      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+      behaviors: [
+        "drag-canvas",
+        { type: "zoom-canvas", key: "zoom-wheel" },
+        { type: "zoom-canvas", key: "zoom-pinch", trigger: ["pinch"] },
+        "drag-element",
+      ],
     } as unknown as ConstructorParameters<typeof Graph>[0];
     if (!graphRef.current) {
       graphRef.current = new Graph(options);
@@ -1977,12 +2151,24 @@ function G6GraphCanvas({
     } else {
       graphRef.current.setOptions(options);
     }
-    graphRef.current.render();
+    renderedRef.current = false;
+    const renderResult = graphRef.current.render();
+    Promise.resolve(renderResult).finally(() => {
+      renderedRef.current = true;
+    });
     return () => {
       graphRef.current?.destroy();
       graphRef.current = null;
+      renderedRef.current = false;
     };
   }, [data, nodes, onSelectNode, selectedNodeId, viewMode]);
+
+  useEffect(() => {
+    if (overviewSignal === 0 || !graphRef.current) return;
+    window.setTimeout(() => {
+      void graphRef.current?.fitView({ when: "always", direction: "both" }, { duration: renderedRef.current ? 280 : 0 });
+    }, 60);
+  }, [overviewSignal]);
 
   return <div className={viewMode === "explore" ? "g6-canvas vault-graph" : "g6-canvas"} ref={containerRef} />;
 }
@@ -2355,12 +2541,14 @@ function ExtractionPanel({
   busy,
   onClearText,
   onDeleteSource,
+  onOpenSource,
   onToggleRetention,
   runSources,
 }: {
   busy: boolean;
   onClearText: (source: SourceRecord) => void;
   onDeleteSource: (source: SourceRecord) => void;
+  onOpenSource: (source: SourceRecord) => void;
   onToggleRetention: (source: SourceRecord) => void;
   runSources: SourceRecord[];
 }) {
@@ -2368,8 +2556,8 @@ function ExtractionPanel({
     <div className="panel extracted-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">引用来源</p>
-          <h2>素材证据</h2>
+          <p className="eyebrow">搜索素材</p>
+          <h2>文章素材</h2>
         </div>
         <SlidersHorizontal size={19} />
       </div>
@@ -2379,13 +2567,14 @@ function ExtractionPanel({
         ) : (
           runSources.map((source) => (
             <article className="extracted-row" key={source.id}>
-              <div>
+              <button className="source-open-button" type="button" onClick={() => onOpenSource(source)}>
                 <strong>{source.title || source.site || source.url}</strong>
-                <a href={source.url} target="_blank" rel="noreferrer">
-                  {source.site || source.url}
-                </a>
-              </div>
+                <span>{source.snippet || source.extracted_text || source.status_reason || source.site || source.url}</span>
+              </button>
               <span className={`extract-status ${source.status}`}>{statusLabel(source.status)}</span>
+              <a className="source-link" href={source.url} target="_blank" rel="noreferrer">
+                {source.site || "打开"}
+              </a>
               <div className="row-actions">
                 <button
                   aria-label={source.is_pinned ? `取消保留来源 ${source.id}` : `保留来源 ${source.id}`}

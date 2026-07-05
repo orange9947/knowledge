@@ -1,18 +1,35 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@antv/g6", () => ({
-  Graph: class {
-    constructor(_options: unknown) {}
+vi.mock("@antv/g6", () => {
+  class MockGraph {
+    static instances: MockGraph[] = [];
+    fitView = vi.fn(() => Promise.resolve());
+    optionHistory: unknown[] = [];
+    options: unknown;
+
+    constructor(options: unknown) {
+      this.options = options;
+      this.optionHistory.push(options);
+      MockGraph.instances.push(this);
+    }
     destroy() {}
     on() {}
-    render() {}
-    setOptions() {}
-  },
-}));
+    render() {
+      return Promise.resolve();
+    }
+    setOptions(options: unknown) {
+      this.options = options;
+      this.optionHistory.push(options);
+    }
+  }
+
+  return { Graph: MockGraph };
+});
 
 import App from "./App";
+import { Graph as MockedGraph } from "@antv/g6";
 
 type MockGraphNode = {
   aliases: string[];
@@ -28,6 +45,7 @@ type MockGraphNode = {
 describe("App", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    (MockedGraph as unknown as { instances: unknown[] }).instances = [];
   });
 
   afterEach(() => {
@@ -101,7 +119,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "AI 学习知识图谱" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "知识提炼" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "素材证据" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "文章素材" })).toBeInTheDocument();
     expect(screen.getByLabelText("阅读分析模型配置")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeInTheDocument();
@@ -925,19 +943,57 @@ describe("App", () => {
     expect(await screen.findByText("学习偏好已保存")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "AI 采集" }));
     expect(await screen.findByText("工具调用")).toBeInTheDocument();
+    expect(screen.getByLabelText("AI 知识提炼")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "文章素材" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /AI 智能体 AI 采集总结/ }));
+    const cardDialog = screen.getByRole("dialog", { name: "知识卡片详情" });
+    expect(cardDialog).toBeInTheDocument();
+    expect(within(cardDialog).getByText("已过滤重复内容")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭详情" }));
+    await user.click(screen.getByRole("button", { name: /Agent guide/ }));
+    const sourceDialog = screen.getByRole("dialog", { name: "素材详情" });
+    expect(sourceDialog).toBeInTheDocument();
+    expect(within(sourceDialog).getByText("Agent guide body")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭详情" }));
     await user.click(screen.getByRole("button", { name: "全选待加入" }));
     expect(await screen.findByText("已选择 2 张待加入卡片")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "加入选中知识" }));
     expect(await screen.findByText("已将 2 张知识卡片加入图谱")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "清空本次搜索卡片" }));
+    expect(await screen.findByText("已清空本次搜索卡片显示，历史记录仍会保留")).toBeInTheDocument();
+    expect(screen.queryByText("工具调用")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "图谱" }));
     expect(screen.getByRole("heading", { name: "知识关系" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "运行" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关系探索" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "类型分组" })).toBeInTheDocument();
+    await waitFor(() => {
+      const graphInstances = (MockedGraph as unknown as { instances: Array<{ optionHistory: unknown[]; fitView: ReturnType<typeof vi.fn> }> }).instances;
+      expect(graphInstances.length).toBeGreaterThan(0);
+      const latestInstance = graphInstances[graphInstances.length - 1];
+      const latestOptions = latestInstance.optionHistory[latestInstance.optionHistory.length - 1] as { behaviors?: unknown[] };
+      expect(latestOptions.behaviors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: "zoom-pinch", trigger: ["pinch"], type: "zoom-canvas" }),
+        ]),
+      );
+    });
     await user.click(await screen.findByRole("button", { name: "RAG" }));
     expect(await screen.findByText("Retrieval augmented generation")).toBeInTheDocument();
     expect(screen.getByText("相关关系")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "搜索图谱节点" }), "检索");
+    await user.selectOptions(screen.getByLabelText("节点类型筛选"), "concept");
+    await user.click(screen.getByRole("button", { name: "返回概览" }));
+    expect(await screen.findByText("已返回图谱整体结构")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "搜索图谱节点" })).toHaveValue("");
+    expect(screen.getByLabelText("节点类型筛选")).toHaveValue("all");
+    expect(screen.getByLabelText("关系深度")).toHaveValue("2");
+    expect(screen.queryByText("Retrieval augmented generation")).not.toBeInTheDocument();
+    await waitFor(() => {
+      const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn> }> }).instances;
+      expect(graphInstances.some((instance) => instance.fitView.mock.calls.length > 0)).toBe(true);
+    });
     await user.click(screen.getByRole("button", { name: "AI 助手" }));
     await user.type(screen.getByLabelText("AI 助手问题"), "我下一步应该学什么？");
     await user.click(screen.getByRole("button", { name: "提问" }));
