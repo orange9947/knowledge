@@ -7,6 +7,10 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "test:backend": "cd backend && pytest",
     "test:frontend": "npm --prefix frontend test -- --run",
-    "build:frontend": "npm --prefix frontend run build"
+    "test:desktop": "npm --prefix desktop test",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend:desktop": "cd backend && pyinstaller pyinstaller.spec",
+    "build:desktop": "npm run build:frontend && npm --prefix desktop run build",
+    "dev:desktop": "npm run build:frontend && npm --prefix desktop run dev"
   }
 }

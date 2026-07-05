@@ -1,0 +1,40 @@
+{
+  "name": "ai-learning-knowledge-graph-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && electron .",
+    "test": "vitest run src/backend.test.ts",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "electron-is-dev": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  },
+  "build": {
+    "appId": "com.orange.ailkg",
+    "productName": "AI 学习知识图谱",
+    "files": [
+      "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      },
+      {
+        "from": "../backend/dist/ailkg-backend",
+        "to": "backend/ailkg-backend"
+      }
+    ]
+  }
+}
