@@ -5,6 +5,7 @@ export type GraphViewMode = "explore" | "types" | "path";
 export type PreparedGraphNode = KnowledgeNode & {
   distance: number | null;
   group: string;
+  isLayoutFocus: boolean;
   muted: boolean;
   priority: number;
   weight: number;
@@ -32,9 +33,10 @@ export function prepareGraphData(graph: GraphData, filters: GraphFilters) {
       edge.type !== "supported_by_source",
   );
   const semanticGraph = { nodes: semanticNodes, edges: semanticEdges };
-  const selectedIds = focusedNodeIds(semanticGraph, filters.selectedNodeId, filters.depth);
-  const distances = nodeDistances(semanticGraph, filters.selectedNodeId, filters.depth);
   const degrees = nodeDegrees(semanticGraph);
+  const layoutFocusId = filters.selectedNodeId ?? strongestNodeId(semanticNodes, degrees);
+  const selectedIds = focusedNodeIds(semanticGraph, layoutFocusId, filters.depth);
+  const distances = nodeDistances(semanticGraph, layoutFocusId, filters.depth);
   const ranked = [...semanticNodes].sort((left, right) => {
     const leftFocus = selectedIds.has(left.id) ? 0 : 1;
     const rightFocus = selectedIds.has(right.id) ? 0 : 1;
@@ -46,6 +48,7 @@ export function prepareGraphData(graph: GraphData, filters: GraphFilters) {
     if (query && !nodeMatchesQuery(node, query)) return false;
     if (filters.selectedNodeId && filters.viewMode === "explore") return selectedIds.has(node.id);
     if (filters.selectedNodeId) return selectedIds.has(node.id);
+    if (filters.viewMode === "explore" && !query && type === "all" && selectedIds.size > 1) return selectedIds.has(node.id);
     if (filters.viewMode === "explore") return query || type !== "all" ? true : index < 64;
     return query || type !== "all" ? true : index < 42;
   });
@@ -57,6 +60,7 @@ export function prepareGraphData(graph: GraphData, filters: GraphFilters) {
     ...node,
     distance: distances.get(node.id) ?? null,
     group: groupForNode(node, filters.viewMode),
+    isLayoutFocus: node.id === layoutFocusId,
     muted: filters.selectedNodeId !== null && filters.viewMode === "explore" && !selectedIds.has(node.id),
     priority: index,
     weight: degrees.get(node.id) ?? 0,
@@ -115,6 +119,10 @@ export function isSourceNode(node: KnowledgeNode): boolean {
 function nodeMatchesQuery(node: KnowledgeNode, query: string): boolean {
   const text = [node.name, node.summary, node.type, ...node.aliases, ...node.tags].join(" ").toLowerCase();
   return text.includes(query);
+}
+
+function strongestNodeId(nodes: KnowledgeNode[], degrees: Map<number, number>): number | null {
+  return [...nodes].sort((left, right) => (degrees.get(right.id) ?? 0) - (degrees.get(left.id) ?? 0) || left.id - right.id)[0]?.id ?? null;
 }
 
 function orderByView(nodes: KnowledgeNode[], viewMode: GraphViewMode, degrees: Map<number, number>): KnowledgeNode[] {

@@ -1650,7 +1650,7 @@ function GraphPanel({
   const [viewMode, setViewMode] = useState<GraphViewMode>("explore");
   const [graphQuery, setGraphQuery] = useState("");
   const [graphType, setGraphType] = useState("all");
-  const [graphDepth, setGraphDepth] = useState(1);
+  const [graphDepth, setGraphDepth] = useState(2);
   const graphTypes = useMemo(() => graphNodeTypes(graph), [graph]);
   const preparedGraph = useMemo(() => prepareGraphData(graph, {
     depth: graphDepth,
@@ -1856,6 +1856,7 @@ function G6GraphCanvas({
         group: node.group,
         distance: node.distance,
         muted: node.muted,
+        layoutFocus: node.isLayoutFocus,
         priority: node.priority,
         selected: node.id === selectedNodeId,
         weight: node.weight,
@@ -1878,12 +1879,18 @@ function G6GraphCanvas({
         : viewMode === "types"
           ? { type: "grid", preventOverlap: true }
           : {
-              type: "d3-force",
-              collide: { radius: 44, strength: 0.92 },
-              link: { distance: 118, strength: 0.42 },
-              manyBody: { strength: -260 },
-              x: { strength: 0.035 },
-              y: { strength: 0.035 },
+              type: "radial",
+              focusNode: String(nodes.find((node) => node.isLayoutFocus)?.id ?? selectedNodeId ?? nodes[0]?.id ?? ""),
+              linkDistance: 168,
+              maxIteration: 1000,
+              maxPreventOverlapIteration: 320,
+              nodeSize: 58,
+              nodeSpacing: 22,
+              preventOverlap: true,
+              sortBy: "group",
+              sortStrength: 22,
+              strictRadial: false,
+              unitRadius: 172,
             };
     const options = {
       container: containerRef.current,
@@ -1893,27 +1900,29 @@ function G6GraphCanvas({
       node: {
         type: "circle",
         style: {
-          size: (datum: { data?: { selected?: boolean; weight?: number } }) => {
+          size: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; weight?: number } }) => {
             if (datum.data?.selected) return exploreMode ? 58 : 48;
+            if (exploreMode && datum.data?.layoutFocus) return 54;
             return exploreMode ? Math.min(48, 24 + (datum.data?.weight ?? 0) * 4) : 36;
           },
           fill: (datum: { data?: { type?: string } }) => nodeColor(datum.data?.type || "concept"),
           fillOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.22 : 0.96),
-          stroke: (datum: { data?: { selected?: boolean; distance?: number | null } }) => {
+          stroke: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; distance?: number | null } }) => {
             if (datum.data?.selected) return exploreMode ? "#f7faf8" : "#121815";
+            if (exploreMode && datum.data?.layoutFocus) return "#f7faf8";
             if (exploreMode && datum.data?.distance === 1) return "#dce9e3";
             return exploreMode ? "#26322e" : "#ffffff";
           },
           strokeOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.2 : 0.92),
-          lineWidth: (datum: { data?: { selected?: boolean; distance?: number | null } }) => {
-            if (datum.data?.selected) return 4;
+          lineWidth: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; distance?: number | null } }) => {
+            if (datum.data?.selected || datum.data?.layoutFocus) return 4;
             return exploreMode && datum.data?.distance === 1 ? 2.2 : 1.4;
           },
           labelText: (datum: { data?: { label?: string } }) => datum.data?.label || "",
           labelFill: exploreMode ? "#dbe9e2" : "#24312b",
           labelFillOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.28 : 0.96),
-          labelFontSize: (datum: { data?: { selected?: boolean; weight?: number } }) =>
-            datum.data?.selected ? 14 : Math.min(12.5, 10.5 + (datum.data?.weight ?? 0) * 0.28),
+          labelFontSize: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; weight?: number } }) =>
+            datum.data?.selected || datum.data?.layoutFocus ? 14 : Math.min(12.5, 10.5 + (datum.data?.weight ?? 0) * 0.28),
           labelFontWeight: exploreMode ? 700 : 800,
           labelPlacement: "bottom",
           labelMaxWidth: exploreMode ? 140 : 120,
@@ -1930,7 +1939,7 @@ function G6GraphCanvas({
           labelText: "",
         },
       },
-      behaviors: exploreMode ? ["drag-canvas", "zoom-canvas", "drag-element-force"] : ["drag-canvas", "zoom-canvas", "drag-element"],
+      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
     } as unknown as ConstructorParameters<typeof Graph>[0];
     if (!graphRef.current) {
       graphRef.current = new Graph(options);
@@ -1946,7 +1955,7 @@ function G6GraphCanvas({
       graphRef.current?.destroy();
       graphRef.current = null;
     };
-  }, [data, onSelectNode, viewMode]);
+  }, [data, nodes, onSelectNode, selectedNodeId, viewMode]);
 
   return <div className={viewMode === "explore" ? "g6-canvas vault-graph" : "g6-canvas"} ref={containerRef} />;
 }

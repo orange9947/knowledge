@@ -50,4 +50,23 @@ describe("graphUtils", () => {
     expect(prepared.nodes.map((node) => node.name)).not.toContain("来源：RAG Guide（github.com）");
     expect(prepared.edges.map((edge) => edge.type)).not.toContain("supported_by_source");
   });
+
+  it("uses a central high-degree node for radial exploration when nothing is selected", () => {
+    const prepared = prepareGraphData(graph, {
+      depth: 2,
+      query: "",
+      selectedNodeId: null,
+      type: "all",
+      viewMode: "explore",
+    });
+
+    const focus = prepared.nodes.find((node) => node.isLayoutFocus);
+    expect(focus?.name).toBe("检索");
+    expect(prepared.nodes.map((node) => [node.name, node.distance]).sort()).toEqual([
+      ["RAG", 1],
+      ["检索", 0],
+      ["重排序", 1],
+      ["问答项目", 2],
+    ].sort());
+  });
 });
