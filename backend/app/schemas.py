@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
+
+from app.pydantic_compat import OrmBaseModel
 
 
 RunMode = Literal["light", "standard", "deep"]
@@ -28,9 +30,7 @@ class KnowledgeBaseUpdate(BaseModel):
     learning_prompt: str | None = None
 
 
-class KnowledgeBaseRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class KnowledgeBaseRead(OrmBaseModel):
     id: int
     name: str
     description: str | None
@@ -46,9 +46,7 @@ class LearningRunCreate(BaseModel):
     learning_prompt: str | None = None
 
 
-class LearningRunRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class LearningRunRead(OrmBaseModel):
     id: int
     knowledge_base_id: int = 1
     keyword: str
@@ -79,9 +77,7 @@ class ModelConfigWrite(BaseModel):
     max_tokens: int = Field(default=4096, ge=256, le=200000)
 
 
-class ModelConfigRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class ModelConfigRead(OrmBaseModel):
     id: int
     name: str
     base_url: str
@@ -119,9 +115,7 @@ class SourceConfigWrite(BaseModel):
     extractor_rule: dict[str, object] | None = None
 
 
-class SourceConfigRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class SourceConfigRead(OrmBaseModel):
     id: int
     name: str
     type: str
@@ -147,9 +141,7 @@ class SourceCreate(BaseModel):
     quality_score: float | None = None
 
 
-class SourceRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class SourceRead(OrmBaseModel):
     id: int
     run_id: int
     url: str
@@ -183,9 +175,7 @@ class CardCreate(BaseModel):
     candidate_payload: dict[str, Any] | None = None
 
 
-class CardRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class CardRead(OrmBaseModel):
     id: int
     run_id: int
     type: str
@@ -267,9 +257,7 @@ class KnowledgeEdgeCreate(BaseModel):
     evidence_source_ids: list[int] = Field(default_factory=list)
 
 
-class KnowledgeNodeRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class KnowledgeNodeRead(OrmBaseModel):
     id: int
     knowledge_base_id: int = 1
     type: str
@@ -280,9 +268,7 @@ class KnowledgeNodeRead(BaseModel):
     tags: list[str]
 
 
-class KnowledgeEdgeRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class KnowledgeEdgeRead(OrmBaseModel):
     id: int
     knowledge_base_id: int = 1
     source_node_id: int

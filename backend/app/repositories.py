@@ -9,6 +9,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app import models
 from app.defaults import default_source_configs
+from app.pydantic_compat import model_dump, model_fields_set
 from app.schemas import (
     CardCreate,
     KnowledgeEdgeCreate,
@@ -95,7 +96,7 @@ class KnowledgeRepository:
         knowledge_base: models.KnowledgeBase,
         payload: KnowledgeBaseUpdate,
     ) -> models.KnowledgeBase:
-        changed_fields = payload.model_fields_set
+        changed_fields = model_fields_set(payload)
         if "name" in changed_fields and payload.name is not None:
             knowledge_base.name = payload.name.strip()
         if "description" in changed_fields:
@@ -334,7 +335,7 @@ class KnowledgeRepository:
         return run_id
 
     def add_card(self, payload: CardCreate) -> models.Card:
-        card = models.Card(**payload.model_dump())
+        card = models.Card(**model_dump(payload))
         self.session.add(card)
         self.session.commit()
         self.session.refresh(card)
@@ -423,7 +424,7 @@ class KnowledgeRepository:
         return node
 
     def update_node(self, node: models.KnowledgeNode, payload: KnowledgeNodeUpdate) -> models.KnowledgeNode:
-        changed_fields = payload.model_fields_set
+        changed_fields = model_fields_set(payload)
         if "type" in changed_fields and payload.type is not None:
             node.type = payload.type.strip()
         if "name" in changed_fields and payload.name is not None:
@@ -477,7 +478,7 @@ class KnowledgeRepository:
         )
         edge = self.session.scalar(statement)
         if edge is None:
-            edge = models.KnowledgeEdge(**payload.model_dump())
+            edge = models.KnowledgeEdge(**model_dump(payload))
             self.session.add(edge)
         else:
             edge.confidence = max(edge.confidence, payload.confidence)

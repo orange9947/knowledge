@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import init_db
+from app.pydantic_compat import model_dump_json
 from app.portable import export_knowledge, import_knowledge
 from app.repositories import KnowledgeRepository
 from app.schemas import (
@@ -69,7 +70,7 @@ def test_export_import_round_trip_excludes_model_secrets(tmp_path):
         )
 
         exported = export_knowledge(source_repo, knowledge_base_id=knowledge_base.id)
-        serialized = exported.model_dump_json()
+        serialized = model_dump_json(exported)
         assert "api_key" not in serialized
         assert [item.name for item in exported.knowledge_bases] == ["LLM"]
         assert len(exported.runs) == 1

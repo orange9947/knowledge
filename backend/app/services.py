@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.ai import AIOrchestrator, AIOutput, AIProviderError
 from app.crawler import SourceCrawler
 from app.discovery import SourceCandidate, discover_candidates, site_from_url
+from app.pydantic_compat import model_dump
 from app.repositories import KnowledgeRepository
 from app.schemas import CardCreate, KnowledgeEdgeCreate, KnowledgeNodeCreate
 
@@ -298,14 +299,14 @@ def _candidate_payload_for_card(card_payload, output: AIOutput, sources) -> dict
         if edge.source in seed_names or edge.target in seed_names:
             endpoint_names.add(edge.source)
             endpoint_names.add(edge.target)
-            edge_data = edge.model_dump()
+            edge_data = model_dump(edge)
             edge_data["evidence_source_ids"] = _source_ids_from_indexes(sources, edge.source_indexes) or card_source_ids
             related_edges.append(edge_data)
 
     related_nodes = [
-        output_nodes[name].model_dump()
+        model_dump(output_nodes[name])
         for name in endpoint_names
-        if name in output_nodes and not _is_source_node_payload(output_nodes[name].model_dump())
+        if name in output_nodes and not _is_source_node_payload(model_dump(output_nodes[name]))
     ]
     if not any(node["name"] == card_payload.title for node in related_nodes):
         related_nodes.append(

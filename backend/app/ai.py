@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from app import models
+from app.pydantic_compat import model_validate
 from app.secrets import SecretStore
 
 
@@ -195,7 +196,7 @@ class AIOrchestrator:
         data = self._post_chat_completion(url, headers, payload)
         content = data["choices"][0]["message"]["content"]
         try:
-            parsed = AITargetOutput.model_validate(json.loads(_strip_code_fence(content)))
+            parsed = model_validate(AITargetOutput, json.loads(_strip_code_fence(content)))
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
             raise AIProviderError("模型返回格式异常，无法解析 AI 采集目标。") from exc
         return [
@@ -694,8 +695,8 @@ def _strip_code_fence(content: str) -> str:
 
 
 def _parse_ai_output(content: str) -> AIOutput:
-    return AIOutput.model_validate(json.loads(_strip_code_fence(content)))
+    return model_validate(AIOutput, json.loads(_strip_code_fence(content)))
 
 
 def _parse_assistant_output(content: str) -> AIAssistantOutput:
-    return AIAssistantOutput.model_validate(json.loads(_strip_code_fence(content)))
+    return model_validate(AIAssistantOutput, json.loads(_strip_code_fence(content)))

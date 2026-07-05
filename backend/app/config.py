@@ -1,11 +1,23 @@
 from functools import lru_cache
+import os
 from pathlib import Path
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+
+    class _SettingsBase(BaseSettings):
+        model_config = SettingsConfigDict(env_prefix="AILKG_", env_file=".env", enable_decoding=False)
+
+except ImportError:
+    from pydantic import BaseSettings
+
+    class _SettingsBase(BaseSettings):
+        class Config:
+            env_prefix = "AILKG_"
+            env_file = ".env"
 
 
-class Settings(BaseSettings):
+class Settings(_SettingsBase):
     app_name: str = "AI 学习知识图谱"
     app_version: str = "0.1.0"
     database_url: str = "sqlite:///./data/knowledge.db"
@@ -14,14 +26,11 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
-    model_config = SettingsConfigDict(env_prefix="AILKG_", env_file=".env", enable_decoding=False)
-
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value: object) -> object:
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+    def __init__(self, **values):
+        env_origins = os.environ.get("AILKG_CORS_ORIGINS")
+        if env_origins and "cors_origins" not in values:
+            values["cors_origins"] = [item.strip() for item in env_origins.split(",") if item.strip()]
+        super().__init__(**values)
 
 
 @lru_cache
