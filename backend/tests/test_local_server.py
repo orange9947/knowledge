@@ -1,6 +1,6 @@
 import importlib
 
-from app.config import Settings
+from app.config import Settings, parse_cors_origins
 
 
 def test_settings_reads_cors_origins_from_env_string(monkeypatch):
@@ -12,6 +12,14 @@ def test_settings_reads_cors_origins_from_env_string(monkeypatch):
     settings = Settings()
 
     assert settings.cors_origins == [
+        "http://localhost",
+        "http://127.0.0.1",
+        "capacitor://localhost",
+    ]
+
+
+def test_cors_env_parser_accepts_comma_string():
+    assert parse_cors_origins("http://localhost, http://127.0.0.1, capacitor://localhost") == [
         "http://localhost",
         "http://127.0.0.1",
         "capacitor://localhost",

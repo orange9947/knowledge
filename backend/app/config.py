@@ -2,6 +2,11 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
+
+def parse_cors_origins(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 try:
     from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +21,12 @@ except ImportError:
             env_prefix = "AILKG_"
             env_file = ".env"
 
+            @classmethod
+            def parse_env_var(cls, field_name: str, raw_value: str):
+                if field_name == "cors_origins":
+                    return parse_cors_origins(raw_value)
+                return cls.json_loads(raw_value)
+
 
 class Settings(_SettingsBase):
     app_name: str = "AI 学习知识图谱"
@@ -29,7 +40,7 @@ class Settings(_SettingsBase):
     def __init__(self, **values):
         env_origins = os.environ.get("AILKG_CORS_ORIGINS")
         if env_origins and "cors_origins" not in values:
-            values["cors_origins"] = [item.strip() for item in env_origins.split(",") if item.strip()]
+            values["cors_origins"] = parse_cors_origins(env_origins)
         super().__init__(**values)
 
 
