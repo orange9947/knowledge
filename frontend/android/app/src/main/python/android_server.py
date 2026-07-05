@@ -6,19 +6,26 @@ from datetime import datetime
 
 _server_thread = None
 _startup_error = None
+_status = "idle"
 
 
 def log(message: str) -> None:
     print(f"AILKG_PY {datetime.now().isoformat(timespec='seconds')} {message}", flush=True)
 
 
+def set_status(status: str) -> None:
+    global _status
+    _status = status
+    log(status)
+
+
 def start(data_dir: str, port: int) -> None:
     global _server_thread, _startup_error
     if _server_thread and _server_thread.is_alive():
-        log("start skipped; server thread is already alive")
+        set_status("start skipped; server thread is already alive")
         return
 
-    log(f"start requested data_dir={data_dir} port={port}")
+    set_status(f"start requested data_dir={data_dir} port={port}")
 
     os.environ["AILKG_DATA_DIR"] = data_dir
     os.environ["AILKG_DATABASE_URL"] = f"sqlite:///{data_dir}/knowledge.db"
@@ -33,20 +40,39 @@ def start(data_dir: str, port: int) -> None:
     def run() -> None:
         global _startup_error
         try:
-            log("importing local server")
-            from app.local_server import run_local_server
+            set_status("importing uvicorn and backend app")
+            import uvicorn
+            from app.local_server import apply_local_server_environment, build_local_server_settings
 
-            log("running local server")
-            run_local_server(port=port)
+            settings = build_local_server_settings(port=port)
+            apply_local_server_environment(settings)
+
+            set_status(f"binding {settings.host}:{settings.port}")
+            config = uvicorn.Config(
+                "app.main:app",
+                host=settings.host,
+                port=settings.port,
+                reload=False,
+                access_log=False,
+                log_level="info",
+            )
+            server = uvicorn.Server(config)
+            set_status("uvicorn server starting")
+            server.run()
+            set_status("uvicorn server stopped")
         except Exception:
             _startup_error = traceback.format_exc()
-            log(_startup_error)
+            set_status(f"startup failed: {_startup_error}")
 
     _startup_error = None
     _server_thread = threading.Thread(target=run, daemon=True)
     _server_thread.start()
-    log("server thread started")
+    set_status("server thread started")
 
 
 def startup_error() -> str | None:
     return _startup_error
+
+
+def status() -> str:
+    return _status

@@ -11,6 +11,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 import com.chaquo.python.Python;
+import com.chaquo.python.PyObject;
 import com.chaquo.python.android.AndroidPlatform;
 import com.getcapacitor.BridgeActivity;
 
@@ -57,6 +58,7 @@ public class MainActivity extends BridgeActivity {
                 return;
             } catch (Exception error) {
                 Log.i(TAG, "Waiting for local backend health, attempt " + attempt + ": " + error.getMessage());
+                logPythonBackendStatus();
                 try {
                     Thread.sleep(500);
                 } catch (InterruptedException interrupted) {
@@ -66,6 +68,21 @@ public class MainActivity extends BridgeActivity {
             }
         }
         Log.e(TAG, "Local backend health did not become ready on 127.0.0.1:" + BACKEND_PORT);
+        logPythonBackendStatus();
+    }
+
+    private void logPythonBackendStatus() {
+        try {
+            PyObject module = Python.getInstance().getModule("android_server");
+            PyObject status = module.callAttr("status");
+            Log.i(TAG, "Python backend status: " + status.toString());
+            PyObject startupError = module.callAttr("startup_error");
+            if (startupError != null && !startupError.toString().equals("None")) {
+                Log.e(TAG, "Python backend startup error: " + startupError.toString());
+            }
+        } catch (Exception error) {
+            Log.e(TAG, "Failed to read Python backend status", error);
+        }
     }
 
     private String getHealth() throws Exception {
