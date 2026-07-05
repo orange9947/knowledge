@@ -87,6 +87,10 @@ button {
   background: transparent;
 }
 
+.nav-label {
+  display: none;
+}
+
 .nav-button:hover,
 .nav-button.active {
   color: var(--ink);
@@ -658,7 +662,7 @@ h3 {
     linear-gradient(0deg, rgba(18, 24, 21, 0.045) 1px, transparent 1px),
     #f8faf8;
   background-size: 44px 44px, 44px 44px;
-  touch-action: manipulation;
+  touch-action: none;
   overscroll-behavior: contain;
 }
 
@@ -946,6 +950,15 @@ h3 {
   box-shadow: -24px 0 54px rgba(18, 24, 21, 0.14);
   transform: translateX(104%);
   transition: transform 180ms ease;
+}
+
+.assistant-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  border: 0;
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.24);
 }
 
 .assistant-drawer.open {
@@ -1709,22 +1722,55 @@ h3 {
   background: rgba(185, 77, 59, 0.12);
 }
 
-@media (max-width: 980px) {
+@media (max-width: 768px) {
   .app-shell {
+    min-height: 100dvh;
     grid-template-columns: 1fr;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .sidebar {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 15;
     height: auto;
+    padding: 10px 12px;
     flex-direction: row;
-    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
   }
 
   .nav-stack {
+    display: grid;
     grid-auto-flow: column;
+    gap: 8px;
+  }
+
+  .nav-button {
+    width: auto;
+    min-width: 52px;
+    height: 42px;
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .nav-label {
+    display: inline;
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+
+  .workspace {
+    min-width: 0;
+    padding: 16px 12px calc(24px + env(safe-area-inset-bottom));
   }
 
   .topbar,
@@ -1771,11 +1817,11 @@ h3 {
   }
 
   .graph-workbench {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .graph-toolbar {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .segmented {
@@ -1784,27 +1830,102 @@ h3 {
   }
 
   .single-view .graph-canvas {
-    min-height: 420px;
+    min-height: 58dvh;
   }
 
   .history-panel {
     grid-column: auto;
   }
+
+  .panel-heading,
+  .source-row,
+  .extracted-row,
+  .mini-source-row,
+  .knowledge-row,
+  .run-row {
+    align-items: stretch;
+  }
+
+  .panel-heading,
+  .extracted-row,
+  .mini-source-row,
+  .knowledge-row,
+  .run-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .source-row {
+    flex-wrap: wrap;
+  }
+
+  .panel-actions,
+  .row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .run-select {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .run-select strong,
+  .run-select span,
+  .mini-source-list strong,
+  .knowledge-row strong,
+  .knowledge-row span,
+  .extracted-row strong,
+  .extracted-row a,
+  .detail-grid strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .run-select span {
+    text-align: left;
+  }
+
+  .assistant-drawer {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: min(86dvh, 760px);
+    max-width: 100vw;
+    padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    border-radius: 18px 18px 0 0;
+    transform: translateY(104%);
+  }
+
+  .assistant-drawer.open {
+    transform: translateY(0);
+  }
+
+  .assistant-drawer textarea {
+    min-height: 120px;
+  }
 }
 
 @media (max-width: 560px) {
   .workspace {
-    padding: 22px 12px 30px;
+    padding: 14px 10px calc(22px + env(safe-area-inset-bottom));
   }
 
   .sidebar {
-    padding: 12px;
+    padding: 10px;
   }
 
-  .nav-button,
   .brand-mark {
     width: 40px;
     height: 40px;
+  }
+
+  .nav-button {
+    min-width: 48px;
+    height: 40px;
+    padding: 0 10px;
   }
 
   .mode-control {
@@ -1818,10 +1939,6 @@ h3 {
 
   .graph-canvas {
     min-height: 340px;
-  }
-
-  .assistant-drawer {
-    width: calc(100vw - 12px);
   }
 
   .assistant-switches {

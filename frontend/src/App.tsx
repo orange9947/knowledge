@@ -74,6 +74,7 @@ import {
   type SourceSettingsInput,
 } from "./api";
 import { graphNodeTypes, prepareGraphData, type GraphViewMode, type PreparedGraphNode } from "./graphUtils";
+import { getRuntimeName } from "./platform";
 
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
@@ -330,11 +331,11 @@ const emptyNodeForm = {
 };
 type NodeFormState = typeof emptyNodeForm;
 
-const navItems: Array<{ key: ViewKey; label: string; icon: typeof BookOpen }> = [
-  { key: "learn", label: "学习", icon: BookOpen },
-  { key: "graph", label: "知识图谱", icon: Database },
-  { key: "history", label: "历史记录", icon: History },
-  { key: "settings", label: "设置", icon: Settings },
+const navItems: Array<{ key: ViewKey; label: string; title: string; icon: typeof BookOpen }> = [
+  { key: "learn", label: "学习", title: "学习工作区", icon: BookOpen },
+  { key: "graph", label: "图谱", title: "知识图谱", icon: Database },
+  { key: "history", label: "历史", title: "历史记录", icon: History },
+  { key: "settings", label: "设置", title: "设置", icon: Settings },
 ];
 
 function App() {
@@ -371,6 +372,7 @@ function App() {
   const [assistantSelectedCardIds, setAssistantSelectedCardIds] = useState<number[]>([]);
   const [message, setMessage] = useState<string>("准备就绪");
   const [busy, setBusy] = useState(false);
+  const runtimeName = getRuntimeName();
 
   useEffect(() => {
     let mounted = true;
@@ -1069,7 +1071,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell runtime-${runtimeName}`}>
       <aside className="sidebar" aria-label="主导航">
         <div className="brand-mark">
           <GitBranch aria-hidden="true" size={22} />
@@ -1083,10 +1085,11 @@ function App() {
                 className={activeView === item.key ? "nav-button active" : "nav-button"}
                 key={item.key}
                 onClick={() => setActiveView(item.key)}
-                title={item.label}
+                title={item.title}
                 type="button"
               >
-                <Icon size={18} />
+                <Icon aria-hidden="true" size={18} />
+                <span className="nav-label">{item.label}</span>
               </button>
             );
           })}
@@ -1994,78 +1997,88 @@ function AssistantDrawer({
   selectedNode: KnowledgeNode | null;
 }) {
   return (
-    <aside className={open ? "assistant-drawer open" : "assistant-drawer"} aria-label="图谱 AI 助手">
-      <div className="assistant-header">
-        <div>
-          <p className="eyebrow">图谱 AI 助手</p>
-          <h3>{selectedNode ? selectedNode.name : "当前知识库"}</h3>
+    <>
+      {open ? (
+        <button
+          aria-label="关闭 AI 助手遮罩"
+          className="assistant-backdrop"
+          onClick={onClose}
+          type="button"
+        />
+      ) : null}
+      <aside className={open ? "assistant-drawer open" : "assistant-drawer"} aria-label="图谱 AI 助手">
+        <div className="assistant-header">
+          <div>
+            <p className="eyebrow">图谱 AI 助手</p>
+            <h3>{selectedNode ? selectedNode.name : "当前知识库"}</h3>
+          </div>
+          <button className="icon-action" type="button" onClick={onClose} aria-label="关闭 AI 助手">
+            <X size={16} />
+          </button>
         </div>
-        <button className="icon-action" type="button" onClick={onClose} aria-label="关闭 AI 助手">
-          <X size={16} />
+        <textarea
+          aria-label="AI 助手问题"
+          value={question}
+          onChange={(event) => onQuestionChange(event.target.value)}
+          placeholder="例如：围绕这个节点，我下一步应该学什么？"
+        />
+        <div className="assistant-switches">
+          <label>
+            <input checked={allowWeb} type="checkbox" onChange={(event) => onToggleAllowWeb(event.target.checked)} />
+            <span>允许联网补充</span>
+          </label>
+          <label>
+            <input checked={createCandidates} type="checkbox" onChange={(event) => onToggleCreateCandidates(event.target.checked)} />
+            <span>生成候选卡片</span>
+          </label>
+        </div>
+        <button className="primary-button" type="button" onClick={onAsk} disabled={busy}>
+          <Sparkles size={16} />
+          <span>提问</span>
         </button>
-      </div>
-      <textarea
-        aria-label="AI 助手问题"
-        value={question}
-        onChange={(event) => onQuestionChange(event.target.value)}
-        placeholder="例如：围绕这个节点，我下一步应该学什么？"
-      />
-      <div className="assistant-switches">
-        <label>
-          <input checked={allowWeb} type="checkbox" onChange={(event) => onToggleAllowWeb(event.target.checked)} />
-          <span>允许联网补充</span>
-        </label>
-        <label>
-          <input checked={createCandidates} type="checkbox" onChange={(event) => onToggleCreateCandidates(event.target.checked)} />
-          <span>生成候选卡片</span>
-        </label>
-      </div>
-      <button className="primary-button" type="button" onClick={onAsk} disabled={busy}>
-        <Sparkles size={16} />
-        <span>提问</span>
-      </button>
-      {response ? (
-        <div className="assistant-result">
-          <section>
-            <h4>回答</h4>
-            <p>{response.answer}</p>
-          </section>
-          <ReferenceList title="图谱引用" references={response.graph_references} />
-          <ReferenceList title="联网补充" references={response.web_references} />
-          {response.warnings.length > 0 ? (
+        {response ? (
+          <div className="assistant-result">
             <section>
-              <h4>提示</h4>
-              {response.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+              <h4>回答</h4>
+              <p>{response.answer}</p>
             </section>
-          ) : null}
-          {response.candidate_cards.length > 0 ? (
-            <section className="assistant-candidates">
-              <h4>候选知识</h4>
-              {response.candidate_cards.map((card) => (
-                <label key={card.id ?? card.title}>
-                  <input
-                    checked={card.id !== null && selectedCardIds.includes(card.id)}
-                    disabled={busy || card.id === null || card.approval_status === "approved"}
-                    type="checkbox"
-                    onChange={(event) => card.id !== null && onToggleCandidate(card.id, event.target.checked)}
-                  />
-                  <span>
-                    <strong>{card.title}</strong>
-                    <small>{card.approval_status === "approved" ? "已加入" : card.summary}</small>
-                  </span>
-                </label>
-              ))}
-              <button className="secondary-button" type="button" onClick={onApproveCandidates} disabled={busy || selectedCardIds.length === 0}>
-                <GitBranch size={16} />
-                <span>加入选中知识</span>
-              </button>
-            </section>
-          ) : null}
-        </div>
-      ) : (
-        <p className="empty-state compact">选择节点后提问，助手会优先读取当前图谱，必要时联网补充。</p>
-      )}
-    </aside>
+            <ReferenceList title="图谱引用" references={response.graph_references} />
+            <ReferenceList title="联网补充" references={response.web_references} />
+            {response.warnings.length > 0 ? (
+              <section>
+                <h4>提示</h4>
+                {response.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+              </section>
+            ) : null}
+            {response.candidate_cards.length > 0 ? (
+              <section className="assistant-candidates">
+                <h4>候选知识</h4>
+                {response.candidate_cards.map((card) => (
+                  <label key={card.id ?? card.title}>
+                    <input
+                      checked={card.id !== null && selectedCardIds.includes(card.id)}
+                      disabled={busy || card.id === null || card.approval_status === "approved"}
+                      type="checkbox"
+                      onChange={(event) => card.id !== null && onToggleCandidate(card.id, event.target.checked)}
+                    />
+                    <span>
+                      <strong>{card.title}</strong>
+                      <small>{card.approval_status === "approved" ? "已加入" : card.summary}</small>
+                    </span>
+                  </label>
+                ))}
+                <button className="secondary-button" type="button" onClick={onApproveCandidates} disabled={busy || selectedCardIds.length === 0}>
+                  <GitBranch size={16} />
+                  <span>加入选中知识</span>
+                </button>
+              </section>
+            ) : null}
+          </div>
+        ) : (
+          <p className="empty-state compact">选择节点后提问，助手会优先读取当前图谱，必要时联网补充。</p>
+        )}
+      </aside>
+    </>
   );
 }
 

@@ -32,6 +32,7 @@ describe("App", () => {
 
   afterEach(() => {
     cleanup();
+    delete window.__AILKG_RUNTIME__;
   });
 
   it("renders the learning workspace shell", async () => {
@@ -105,6 +106,98 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "运行" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "知识库" })).toBeInTheDocument();
     expect(await screen.findByText("API 0.1.0")).toBeInTheDocument();
+  });
+
+  it("keeps primary navigation accessible for packaged mobile layouts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/health")) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              status: "ok",
+              app_name: "AI 学习知识图谱",
+              version: "0.1.0",
+              database: "ready",
+            }),
+          });
+        }
+        if (url.endsWith("/knowledge-bases")) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              {
+                id: 1,
+                name: "默认知识库",
+                description: "默认知识库",
+                learning_prompt: null,
+                created_at: "2026-07-04T00:00:00Z",
+                updated_at: "2026-07-04T00:00:00Z",
+              },
+            ],
+          });
+        }
+        if (url.endsWith("/settings/model")) return Promise.resolve({ ok: true, json: async () => null });
+        if (url.endsWith("/knowledge/graph")) {
+          return Promise.resolve({ ok: true, json: async () => ({ nodes: [], edges: [] }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "学习" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "图谱" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "历史" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
+  });
+
+  it("adds the injected runtime class to the shell", async () => {
+    window.__AILKG_RUNTIME__ = {
+      apiBaseUrl: "http://127.0.0.1:43125",
+      platform: "desktop",
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      expect(url.startsWith("http://127.0.0.1:43125")).toBe(true);
+      return Promise.resolve({
+        ok: true,
+        json: async () => {
+          if (url.endsWith("/health")) {
+            return {
+              status: "ok",
+              app_name: "AI 学习知识图谱",
+              version: "0.1.0",
+              database: "ready",
+            };
+          }
+          if (url.endsWith("/knowledge-bases")) {
+            return [
+              {
+                id: 1,
+                name: "默认知识库",
+                description: "默认知识库",
+                learning_prompt: null,
+                created_at: "2026-07-04T00:00:00Z",
+                updated_at: "2026-07-04T00:00:00Z",
+              },
+            ];
+          }
+          if (url.endsWith("/settings/model")) return null;
+          if (url.endsWith("/knowledge/graph")) return { nodes: [], edges: [] };
+          return [];
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("API 0.1.0")).toBeInTheDocument();
+    expect(document.querySelector(".app-shell")).toHaveClass("runtime-desktop");
   });
 
   it("switches sidebar buttons to matching workspace panels", async () => {
@@ -786,7 +879,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "加入选中知识" }));
     expect(await screen.findByText("已将 2 张知识卡片加入图谱")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "知识图谱" }));
+    await user.click(screen.getByRole("button", { name: "图谱" }));
     expect(screen.getByRole("heading", { name: "知识关系" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "运行" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关系探索" })).toBeInTheDocument();
@@ -819,7 +912,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "删除关键点" }));
     expect(await screen.findByText("已删除关键点：向量检索")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "历史记录" }));
+    await user.click(screen.getByRole("button", { name: "历史" }));
     expect(screen.getByRole("heading", { name: "运行记录" })).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "筛选历史记录" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
@@ -827,7 +920,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "学习" }));
     await user.click(screen.getByRole("button", { name: "总结本次素材" }));
     expect(await screen.findByText("重排序")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "历史记录" }));
+    await user.click(screen.getByRole("button", { name: "历史" }));
     await user.click(screen.getByRole("button", { name: "保留任务 7" }));
     expect(await screen.findByText("已保留任务 #7")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "保留来源 7" }));
