@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { join, resolve } from "node:path";
 
 import { buildBackendEnv, getBackendExecutablePath, normalizeHealthUrl, sqlitePath } from "./backend.js";
 
 describe("desktop backend helpers", () => {
   it("builds backend environment paths inside Electron userData", () => {
-    const env = buildBackendEnv("/tmp/ailkg-user-data", 43125);
+    const userDataPath = resolve("/tmp/ailkg-user-data");
+    const env = buildBackendEnv(userDataPath, 43125);
 
     expect(env.AILKG_PORT).toBe("43125");
     expect(env.AILKG_HOST).toBe("127.0.0.1");
-    expect(env.AILKG_DATABASE_URL).toBe("sqlite:////tmp/ailkg-user-data/knowledge.db");
-    expect(env.AILKG_SECRET_FILE).toBe("/tmp/ailkg-user-data/secrets.json");
+    expect(env.AILKG_DATABASE_URL).toBe(`sqlite:///${sqlitePath(join(userDataPath, "knowledge.db"))}`);
+    expect(env.AILKG_SECRET_FILE).toBe(join(userDataPath, "secrets.json"));
   });
 
   it("normalizes health URL", () => {
@@ -23,6 +25,9 @@ describe("desktop backend helpers", () => {
   });
 
   it("falls back to packaged backend resource path", () => {
-    expect(getBackendExecutablePath("/tmp/ailkg-resources")).toMatch(/\/tmp\/ailkg-resources\/backend\/ailkg-backend(?:\.exe)?$/);
+    const resourcesPath = "/tmp/ailkg-resources";
+    const executableName = process.platform === "win32" ? "ailkg-backend.exe" : "ailkg-backend";
+
+    expect(getBackendExecutablePath(resourcesPath)).toBe(join(resourcesPath, "backend", executableName));
   });
 });
