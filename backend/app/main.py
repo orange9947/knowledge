@@ -333,6 +333,8 @@ def approve_run_cards(
     payload: CardApprovalRequest,
     session: Session = Depends(get_session),
 ):
+    if not payload.card_ids:
+        raise HTTPException(status_code=422, detail="请选择要加入图谱的知识卡片")
     try:
         run = LearningRunService(session).approve_cards(run_id, payload.card_ids)
     except ValueError as exc:

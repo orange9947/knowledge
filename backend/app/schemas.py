@@ -190,7 +190,7 @@ class CardRead(OrmBaseModel):
 
 
 class CardApprovalRequest(BaseModel):
-    card_ids: list[int] = Field(min_length=1)
+    card_ids: list[int]
 
 
 class AssistantQueryRequest(BaseModel):

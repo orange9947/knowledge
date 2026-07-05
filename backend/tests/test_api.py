@@ -351,6 +351,12 @@ def test_cards_and_graph_endpoints(client: TestClient):
     assert default_graph_response.status_code == 200
     assert default_graph_response.json() == {"nodes": [], "edges": []}
 
+    empty_approve_response = client.post(
+        f"/runs/{run_id}/cards/approve",
+        json={"card_ids": []},
+    )
+    assert empty_approve_response.status_code == 422
+
     approve_response = client.post(
         f"/runs/{run_id}/cards/approve",
         json={"card_ids": [cards[0]["id"], cards[-1]["id"]]},
