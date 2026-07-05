@@ -290,7 +290,8 @@ class AIOrchestrator:
                 {
                     "role": "user",
                     "content": (
-                        "Return valid JSON with keys cards, nodes, edges. Preserve the user's content where possible.\n\n"
+                        "Return valid JSON with keys cards, nodes, edges. Do not output web pages, repositories, sites, "
+                        "or source evidence as graph nodes; keep evidence only in source_indexes. Preserve the user's content where possible.\n\n"
                         f"{content}"
                     ),
                 },
@@ -327,6 +328,7 @@ class AIOrchestrator:
                     "role": "user",
                     "content": (
                         "Return valid JSON with keys answer, graph_references, web_references, cards, nodes, edges, warnings. "
+                        "Do not output web pages, repositories, sites, or source evidence as graph nodes; keep evidence only in source_indexes. "
                         "Preserve the user's content where possible.\n\n"
                         f"{content}"
                     ),
@@ -471,33 +473,12 @@ def fallback_output(keyword: str, materials: list[Material]) -> AIOutput:
         AINode(type="project", name=f"{keyword} 实践项目", tags=["practice"]),
         AINode(type="concept", name=f"{keyword} 牵连关键词", tags=["keyword_hint"]),
     ]
-    for material in materials[:3]:
-        source_node_name = _source_node_name(material)
-        nodes.append(
-            AINode(
-                type="source",
-                name=source_node_name,
-                summary=material.site or material.url,
-                tags=["source"],
-            )
-        )
     edges = [
         AIEdge(source=keyword, target=f"{keyword} 核心知识点", type="contains", confidence=0.72),
         AIEdge(source=f"{keyword} 核心知识点", target=f"{keyword} 使用方法", type="prerequisite", confidence=0.68),
         AIEdge(source=f"{keyword} 使用方法", target=f"{keyword} 实践项目", type="applied_by", confidence=0.66),
         AIEdge(source=keyword, target=f"{keyword} 牵连关键词", type="related", confidence=0.62),
     ]
-    for material in materials[:3]:
-        source_node_name = _source_node_name(material)
-        edges.append(
-            AIEdge(
-                source=source_node_name,
-                target=keyword,
-                type="supported_by_source",
-                confidence=0.6,
-                source_indexes=[materials.index(material)],
-            )
-        )
     return AIOutput(cards=cards, nodes=nodes, edges=edges)
 
 
@@ -520,11 +501,6 @@ def _source_materials(sources: list[models.Source]) -> list[Material]:
     return materials
 
 
-def _source_node_name(material: Material) -> str:
-    label = material.site or material.url
-    return f"来源：{material.title}（{label}）"
-
-
 def _build_prompt(
     keyword: str,
     materials: list[Material],
@@ -544,12 +520,13 @@ def _build_prompt(
         "请输出中文阅读分析，重点回答：核心知识点是什么、怎么使用、可以做什么项目、应该如何学习。"
         "同时提炼 5-10 个牵连关键词知识点，解释它们与本关键词的关系。"
         "每张卡片都必须引用 source_indexes，表示支撑这条结论的来源编号。"
+        "不要把网页、仓库、站点或资料来源输出为知识图谱节点；来源只通过 source_indexes 记录。"
         "严格返回 JSON，结构为："
         "{\"cards\":[{\"type\":\"key_point|usage_method|practice_project|learning_path|recommended_reading|keyword_hint\","
         "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
-        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|source\",\"name\":\"...\","
+        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|method\",\"name\":\"...\","
         "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
-        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"prerequisite|contains|related|applied_by|supported_by_source\","
+        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"prerequisite|contains|related|applied_by\","
         "\"confidence\":0.7,\"source_indexes\":[0]}]}。\n\n"
         + "\n\n".join(source_blocks)
     )
@@ -577,13 +554,13 @@ def _build_summary_prompt(
         "必须输出中文 JSON，不要解释 JSON 之外的内容。"
         "输出至少包含：1 张 type=summary 的本次素材总结卡片，1-3 张 type=keyword_hint 的牵连关键词知识点卡片；"
         "如果有新的核心知识、使用方法或项目，也可以输出 key_point、usage_method、practice_project、learning_path、recommended_reading。"
-        "每张卡片必须引用 source_indexes。nodes 中要包含新增或强化的关键词/概念/技能/项目节点，edges 中表达依赖、关联或来源支撑。"
+        "每张卡片必须引用 source_indexes。nodes 中只包含新增或强化的关键词/概念/技能/项目节点；不要把网页、仓库、站点或资料来源输出为节点。edges 中表达依赖、包含、关联或应用关系。"
         "严格 JSON 结构为："
         "{\"cards\":[{\"type\":\"summary|keyword_hint|key_point|usage_method|practice_project|learning_path|recommended_reading\","
         "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
-        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|source\",\"name\":\"...\","
+        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|method\",\"name\":\"...\","
         "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
-        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"prerequisite|contains|related|applied_by|supported_by_source\","
+        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"prerequisite|contains|related|applied_by\","
         "\"confidence\":0.7,\"source_indexes\":[0]}]}。\n\n"
         f"已有知识库摘要：\n{history}\n\n"
         "本次素材：\n"
@@ -637,7 +614,7 @@ def _build_assistant_prompt(
         f"{_preference_context(knowledge_base_prompt, None)}"
         "你是知识图谱学习助手。请优先基于当前知识库回答；如果提供了联网材料，可以作为补充。"
         "回答必须用中文，必须明确区分：图谱内容、联网补充、模型推断。"
-        "不要把联网补充当成已沉淀图谱事实；不要直接声明已加入图谱。"
+        "不要把联网补充当成已沉淀图谱事实；不要直接声明已加入图谱；不要把网页、仓库、站点或资料来源输出为知识图谱节点。"
         f"{candidate_instruction}"
         "严格返回 JSON，结构为："
         "{\"answer\":\"包含 图谱内容/联网补充/模型推断 的中文回答\","
@@ -645,9 +622,9 @@ def _build_assistant_prompt(
         "\"web_references\":[{\"kind\":\"web\",\"title\":\"...\",\"summary\":\"...\",\"ref_id\":\"source:1\",\"url\":\"https://...\"}],"
         "\"cards\":[{\"type\":\"summary|keyword_hint|key_point|usage_method|practice_project|learning_path|recommended_reading\","
         "\"title\":\"...\",\"summary\":\"...\",\"details\":\"...\",\"source_indexes\":[0]}],"
-        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|method|source\",\"name\":\"...\","
+        "\"nodes\":[{\"type\":\"keyword|concept|skill|project|tool|method\",\"name\":\"...\","
         "\"summary\":\"...\",\"aliases\":[],\"tags\":[]}],"
-        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"related|contains|prerequisite|applied_by|supported_by_source\","
+        "\"edges\":[{\"source\":\"node name\",\"target\":\"node name\",\"type\":\"related|contains|prerequisite|applied_by\","
         "\"confidence\":0.7,\"source_indexes\":[0]}],"
         "\"warnings\":[\"...\"]}。\n\n"
         f"当前知识库上下文：\n{graph_context}\n\n"

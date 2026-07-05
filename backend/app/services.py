@@ -215,7 +215,7 @@ class LearningRunService:
         node_by_name = {}
         for node_payload in nodes:
             name = str(node_payload.get("name") or "").strip()
-            if not name:
+            if not name or _is_source_node_payload(node_payload):
                 continue
             node = self.repository.upsert_node(
                 KnowledgeNodeCreate(
@@ -240,6 +240,8 @@ class LearningRunService:
             )
             node_by_name[card.title] = node
         for edge_payload in edges:
+            if str(edge_payload.get("type") or "") == "supported_by_source":
+                continue
             source_node = node_by_name.get(str(edge_payload.get("source") or ""))
             target_node = node_by_name.get(str(edge_payload.get("target") or ""))
             if source_node is None or target_node is None:
@@ -291,6 +293,8 @@ def _candidate_payload_for_card(card_payload, output: AIOutput, sources) -> dict
     related_edges = []
     endpoint_names = set(seed_names)
     for edge in output.edges:
+        if edge.type == "supported_by_source":
+            continue
         if edge.source in seed_names or edge.target in seed_names:
             endpoint_names.add(edge.source)
             endpoint_names.add(edge.target)
@@ -298,7 +302,11 @@ def _candidate_payload_for_card(card_payload, output: AIOutput, sources) -> dict
             edge_data["evidence_source_ids"] = _source_ids_from_indexes(sources, edge.source_indexes) or card_source_ids
             related_edges.append(edge_data)
 
-    related_nodes = [output_nodes[name].model_dump() for name in endpoint_names if name in output_nodes]
+    related_nodes = [
+        output_nodes[name].model_dump()
+        for name in endpoint_names
+        if name in output_nodes and not _is_source_node_payload(output_nodes[name].model_dump())
+    ]
     if not any(node["name"] == card_payload.title for node in related_nodes):
         related_nodes.append(
             {
@@ -314,6 +322,8 @@ def _candidate_payload_for_card(card_payload, output: AIOutput, sources) -> dict
 
 
 def _node_matches_card(card_payload, node) -> bool:
+    if getattr(node, "type", None) == "source" or str(getattr(node, "name", "")).startswith("来源："):
+        return False
     title = card_payload.title.strip()
     if not title:
         return False
@@ -333,3 +343,9 @@ def _node_type_for_card(card_type: str) -> str:
     if card_type in {"recommended_reading", "summary", "keyword_hint", "key_point", "learning_path"}:
         return "concept"
     return "concept"
+
+
+def _is_source_node_payload(node_payload) -> bool:
+    node_type = str(node_payload.get("type") or "").strip().lower()
+    name = str(node_payload.get("name") or "").strip()
+    return node_type == "source" or name.startswith("来源：")

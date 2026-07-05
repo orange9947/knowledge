@@ -73,7 +73,7 @@ import {
   type SourceSettings,
   type SourceSettingsInput,
 } from "./api";
-import { graphNodeTypes, prepareGraphData, type GraphViewMode } from "./graphUtils";
+import { graphNodeTypes, prepareGraphData, type GraphViewMode, type PreparedGraphNode } from "./graphUtils";
 
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
@@ -1721,7 +1721,7 @@ function GraphPanel({
         </label>
       </div>
       <div className="graph-workbench">
-        <div className="graph-canvas" aria-label="知识图谱工作台">
+        <div className={viewMode === "explore" ? "graph-canvas vault-shell" : "graph-canvas"} aria-label="知识图谱工作台">
           {preparedGraph.nodes.length === 0 ? (
             <div className="graph-empty">
               <strong>{knowledgeBaseName}</strong>
@@ -1740,7 +1740,7 @@ function GraphPanel({
                 selectedNodeId={selectedNode?.id ?? null}
                 viewMode={viewMode}
               />
-              <div className="graph-node-list" aria-label="图谱节点列表">
+              <div className={viewMode === "explore" ? "graph-node-list vault-index" : "graph-node-list"} aria-label="图谱节点列表">
                 {preparedGraph.nodes.map((node) => (
                   <button
                     aria-label={node.name}
@@ -1840,7 +1840,7 @@ function G6GraphCanvas({
   viewMode,
 }: {
   edges: GraphData["edges"];
-  nodes: Array<KnowledgeNode & { group: string; priority: number }>;
+  nodes: PreparedGraphNode[];
   onSelectNode: (nodeId: number) => void;
   selectedNodeId: number | null;
   viewMode: GraphViewMode;
@@ -1854,8 +1854,11 @@ function G6GraphCanvas({
         label: node.name,
         type: node.type,
         group: node.group,
+        distance: node.distance,
+        muted: node.muted,
         priority: node.priority,
         selected: node.id === selectedNodeId,
+        weight: node.weight,
       },
     })),
     edges: edges.map((edge) => ({
@@ -1868,12 +1871,20 @@ function G6GraphCanvas({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const exploreMode = viewMode === "explore";
     const layout =
       viewMode === "path"
         ? { type: "dagre", rankdir: "LR", nodeSize: 42, ranksep: 92 }
         : viewMode === "types"
           ? { type: "grid", preventOverlap: true }
-          : { type: "force", preventOverlap: true, linkDistance: 148 };
+          : {
+              type: "d3-force",
+              collide: { radius: 44, strength: 0.92 },
+              link: { distance: 118, strength: 0.42 },
+              manyBody: { strength: -260 },
+              x: { strength: 0.035 },
+              y: { strength: 0.035 },
+            };
     const options = {
       container: containerRef.current,
       autoFit: "view" as const,
@@ -1882,29 +1893,44 @@ function G6GraphCanvas({
       node: {
         type: "circle",
         style: {
-          size: (datum: { data?: { selected?: boolean } }) => (datum.data?.selected ? 48 : 36),
+          size: (datum: { data?: { selected?: boolean; weight?: number } }) => {
+            if (datum.data?.selected) return exploreMode ? 58 : 48;
+            return exploreMode ? Math.min(48, 24 + (datum.data?.weight ?? 0) * 4) : 36;
+          },
           fill: (datum: { data?: { type?: string } }) => nodeColor(datum.data?.type || "concept"),
-          stroke: (datum: { data?: { selected?: boolean } }) => (datum.data?.selected ? "#121815" : "#ffffff"),
-          lineWidth: (datum: { data?: { selected?: boolean } }) => (datum.data?.selected ? 4 : 2),
+          fillOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.22 : 0.96),
+          stroke: (datum: { data?: { selected?: boolean; distance?: number | null } }) => {
+            if (datum.data?.selected) return exploreMode ? "#f7faf8" : "#121815";
+            if (exploreMode && datum.data?.distance === 1) return "#dce9e3";
+            return exploreMode ? "#26322e" : "#ffffff";
+          },
+          strokeOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.2 : 0.92),
+          lineWidth: (datum: { data?: { selected?: boolean; distance?: number | null } }) => {
+            if (datum.data?.selected) return 4;
+            return exploreMode && datum.data?.distance === 1 ? 2.2 : 1.4;
+          },
           labelText: (datum: { data?: { label?: string } }) => datum.data?.label || "",
-          labelFill: "#24312b",
-          labelFontSize: 12,
-          labelFontWeight: 800,
+          labelFill: exploreMode ? "#dbe9e2" : "#24312b",
+          labelFillOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.28 : 0.96),
+          labelFontSize: (datum: { data?: { selected?: boolean; weight?: number } }) =>
+            datum.data?.selected ? 14 : Math.min(12.5, 10.5 + (datum.data?.weight ?? 0) * 0.28),
+          labelFontWeight: exploreMode ? 700 : 800,
           labelPlacement: "bottom",
-          labelMaxWidth: 120,
+          labelMaxWidth: exploreMode ? 140 : 120,
         },
         palette: viewMode === "types" ? { type: "group", field: "group" } : undefined,
       },
       edge: {
         type: "line",
         style: {
-          stroke: "#9fb0a7",
-          lineWidth: 1.2,
-          endArrow: true,
+          stroke: exploreMode ? "#71817a" : "#9fb0a7",
+          strokeOpacity: exploreMode ? 0.34 : 0.72,
+          lineWidth: exploreMode ? 0.85 : 1.2,
+          endArrow: !exploreMode,
           labelText: "",
         },
       },
-      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+      behaviors: exploreMode ? ["drag-canvas", "zoom-canvas", "drag-element-force"] : ["drag-canvas", "zoom-canvas", "drag-element"],
     } as unknown as ConstructorParameters<typeof Graph>[0];
     if (!graphRef.current) {
       graphRef.current = new Graph(options);
@@ -1922,7 +1948,7 @@ function G6GraphCanvas({
     };
   }, [data, onSelectNode, viewMode]);
 
-  return <div className="g6-canvas" ref={containerRef} />;
+  return <div className={viewMode === "explore" ? "g6-canvas vault-graph" : "g6-canvas"} ref={containerRef} />;
 }
 
 function AssistantDrawer({

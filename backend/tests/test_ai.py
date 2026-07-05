@@ -20,7 +20,7 @@ def test_fallback_output_generates_cards_nodes_and_edges():
     assert any(edge.type == "contains" for edge in output.edges)
 
 
-def test_fallback_source_node_does_not_reuse_keyword_name():
+def test_fallback_output_keeps_sources_out_of_graph_nodes():
     output = fallback_output(
         "Example",
         [Material(title="Example", url="https://example.com", site="example.com", text="Example text")],
@@ -29,7 +29,8 @@ def test_fallback_source_node_does_not_reuse_keyword_name():
     keyword_nodes = [node for node in output.nodes if node.type == "keyword"]
     source_nodes = [node for node in output.nodes if node.type == "source"]
     assert keyword_nodes[0].name == "Example"
-    assert source_nodes[0].name.startswith("来源：Example")
+    assert source_nodes == []
+    assert all(edge.type != "supported_by_source" for edge in output.edges)
 
 
 def test_provider_output_gets_one_repair_attempt(monkeypatch):

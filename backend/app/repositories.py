@@ -521,6 +521,8 @@ class KnowledgeRepository:
         return list(self.session.scalars(statement))
 
     def list_graph(self, knowledge_base_id: int | None = None) -> tuple[list[models.KnowledgeNode], list[models.KnowledgeEdge]]:
+        if knowledge_base_id is not None:
+            self.remove_source_graph_nodes(knowledge_base_id)
         node_statement = select(models.KnowledgeNode)
         edge_statement = select(models.KnowledgeEdge)
         if knowledge_base_id is not None:
@@ -529,6 +531,53 @@ class KnowledgeRepository:
         nodes = list(self.session.scalars(node_statement.order_by(models.KnowledgeNode.id.asc())))
         edges = list(self.session.scalars(edge_statement.order_by(models.KnowledgeEdge.id.asc())))
         return nodes, edges
+
+    def remove_source_graph_nodes(self, knowledge_base_id: int) -> int:
+        source_nodes = list(
+            self.session.scalars(
+                select(models.KnowledgeNode).where(
+                    models.KnowledgeNode.knowledge_base_id == knowledge_base_id,
+                    or_(
+                        models.KnowledgeNode.type == "source",
+                        models.KnowledgeNode.name.like("来源：%"),
+                    ),
+                )
+            )
+        )
+        source_node_ids = {node.id for node in source_nodes}
+        edge_filters = [models.KnowledgeEdge.type == "supported_by_source"]
+        if source_node_ids:
+            edge_filters.extend(
+                [
+                    models.KnowledgeEdge.source_node_id.in_(source_node_ids),
+                    models.KnowledgeEdge.target_node_id.in_(source_node_ids),
+                ]
+            )
+        removed_edges = list(
+            self.session.scalars(
+                select(models.KnowledgeEdge).where(
+                    models.KnowledgeEdge.knowledge_base_id == knowledge_base_id,
+                    or_(*edge_filters),
+                )
+            )
+        )
+        if not source_nodes and not removed_edges:
+            return 0
+        for edge in removed_edges:
+            self.session.delete(edge)
+        if source_node_ids:
+            for card in self.session.scalars(
+                select(models.Card).join(models.LearningRun).where(models.LearningRun.knowledge_base_id == knowledge_base_id)
+            ):
+                node_ids = card.node_ids or []
+                filtered = [node_id for node_id in node_ids if node_id not in source_node_ids]
+                if filtered != node_ids:
+                    card.node_ids = filtered
+                    flag_modified(card, "node_ids")
+            for node in source_nodes:
+                self.session.delete(node)
+        self.session.commit()
+        return len(source_nodes)
 
     def prune_orphan_graph(self, knowledge_base_id: int, remove_unanchored_edges: bool = False) -> None:
         source_ids = {
@@ -546,7 +595,7 @@ class KnowledgeRepository:
         ):
             evidence_ids = [source_id for source_id in edge.evidence_source_ids or [] if source_id in source_ids]
             edge.evidence_source_ids = evidence_ids
-            if edge.type == "supported_by_source" and not evidence_ids:
+            if edge.type == "supported_by_source":
                 self.session.delete(edge)
             elif (
                 remove_unanchored_edges

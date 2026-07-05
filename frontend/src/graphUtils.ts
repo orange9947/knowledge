@@ -3,8 +3,11 @@ import type { GraphData, KnowledgeNode } from "./api";
 export type GraphViewMode = "explore" | "types" | "path";
 
 export type PreparedGraphNode = KnowledgeNode & {
+  distance: number | null;
   group: string;
+  muted: boolean;
   priority: number;
+  weight: number;
 };
 
 export type PreparedGraphEdge = GraphData["edges"][number];
@@ -20,9 +23,19 @@ export type GraphFilters = {
 export function prepareGraphData(graph: GraphData, filters: GraphFilters) {
   const query = filters.query.trim().toLowerCase();
   const type = filters.type;
-  const selectedIds = focusedNodeIds(graph, filters.selectedNodeId, filters.depth);
-  const degrees = nodeDegrees(graph);
-  const ranked = [...graph.nodes].sort((left, right) => {
+  const semanticNodes = graph.nodes.filter((node) => !isSourceNode(node));
+  const semanticIds = new Set(semanticNodes.map((node) => node.id));
+  const semanticEdges = graph.edges.filter(
+    (edge) =>
+      semanticIds.has(edge.source_node_id) &&
+      semanticIds.has(edge.target_node_id) &&
+      edge.type !== "supported_by_source",
+  );
+  const semanticGraph = { nodes: semanticNodes, edges: semanticEdges };
+  const selectedIds = focusedNodeIds(semanticGraph, filters.selectedNodeId, filters.depth);
+  const distances = nodeDistances(semanticGraph, filters.selectedNodeId, filters.depth);
+  const degrees = nodeDegrees(semanticGraph);
+  const ranked = [...semanticNodes].sort((left, right) => {
     const leftFocus = selectedIds.has(left.id) ? 0 : 1;
     const rightFocus = selectedIds.has(right.id) ? 0 : 1;
     if (leftFocus !== rightFocus) return leftFocus - rightFocus;
@@ -31,23 +44,33 @@ export function prepareGraphData(graph: GraphData, filters: GraphFilters) {
   const visibleNodes = ranked.filter((node, index) => {
     if (type !== "all" && node.type !== type) return false;
     if (query && !nodeMatchesQuery(node, query)) return false;
+    if (filters.selectedNodeId && filters.viewMode === "explore") return selectedIds.has(node.id);
     if (filters.selectedNodeId) return selectedIds.has(node.id);
-    return query || type !== "all" ? true : index < 36;
+    if (filters.viewMode === "explore") return query || type !== "all" ? true : index < 64;
+    return query || type !== "all" ? true : index < 42;
   });
   const visibleIds = new Set(visibleNodes.map((node) => node.id));
-  const visibleEdges = graph.edges.filter(
+  const visibleEdges = semanticEdges.filter(
     (edge) => visibleIds.has(edge.source_node_id) && visibleIds.has(edge.target_node_id),
   );
   const nodes = orderByView(visibleNodes, filters.viewMode, degrees).map((node, index) => ({
     ...node,
+    distance: distances.get(node.id) ?? null,
     group: groupForNode(node, filters.viewMode),
+    muted: filters.selectedNodeId !== null && filters.viewMode === "explore" && !selectedIds.has(node.id),
     priority: index,
+    weight: degrees.get(node.id) ?? 0,
   }));
   return { nodes, edges: visibleEdges };
 }
 
 export function focusedNodeIds(graph: GraphData, selectedNodeId: number | null, depth: number): Set<number> {
-  if (!selectedNodeId) return new Set();
+  return new Set(nodeDistances(graph, selectedNodeId, depth).keys());
+}
+
+export function nodeDistances(graph: GraphData, selectedNodeId: number | null, depth: number): Map<number, number> {
+  const distances = new Map<number, number>();
+  if (!selectedNodeId) return distances;
   const adjacency = new Map<number, Set<number>>();
   graph.edges.forEach((edge) => {
     if (!adjacency.has(edge.source_node_id)) adjacency.set(edge.source_node_id, new Set());
@@ -55,20 +78,20 @@ export function focusedNodeIds(graph: GraphData, selectedNodeId: number | null, 
     adjacency.get(edge.source_node_id)?.add(edge.target_node_id);
     adjacency.get(edge.target_node_id)?.add(edge.source_node_id);
   });
-  const visited = new Set([selectedNodeId]);
+  distances.set(selectedNodeId, 0);
   let frontier = new Set([selectedNodeId]);
   for (let step = 0; step < depth; step += 1) {
     const next = new Set<number>();
     frontier.forEach((nodeId) => {
       adjacency.get(nodeId)?.forEach((neighborId) => {
-        if (!visited.has(neighborId)) next.add(neighborId);
+        if (!distances.has(neighborId)) next.add(neighborId);
       });
     });
     if (next.size === 0) break;
-    next.forEach((nodeId) => visited.add(nodeId));
+    next.forEach((nodeId) => distances.set(nodeId, step + 1));
     frontier = next;
   }
-  return visited;
+  return distances;
 }
 
 export function nodeDegrees(graph: GraphData): Map<number, number> {
@@ -82,7 +105,11 @@ export function nodeDegrees(graph: GraphData): Map<number, number> {
 }
 
 export function graphNodeTypes(graph: GraphData): string[] {
-  return Array.from(new Set(graph.nodes.map((node) => node.type))).sort();
+  return Array.from(new Set(graph.nodes.filter((node) => !isSourceNode(node)).map((node) => node.type))).sort();
+}
+
+export function isSourceNode(node: KnowledgeNode): boolean {
+  return node.type === "source" || node.name.trim().startsWith("来源：");
 }
 
 function nodeMatchesQuery(node: KnowledgeNode, query: string): boolean {

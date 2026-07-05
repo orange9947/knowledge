@@ -121,6 +121,53 @@ def test_upsert_node_merges_aliases_and_tags(tmp_path):
         session.close()
 
 
+def test_repository_removes_source_graph_nodes(tmp_path):
+    repository, session = build_test_repository(tmp_path)
+    try:
+        run = repository.create_run(LearningRunCreate(keyword="RAG"))
+        knowledge_base_id = run.knowledge_base_id
+        source_node = repository.upsert_node(
+            KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base_id,
+                type="source",
+                name="来源：ageerle/ruoyi-ai（github.com）",
+            )
+        )
+        concept_node = repository.upsert_node(
+            KnowledgeNodeCreate(
+                knowledge_base_id=knowledge_base_id,
+                type="concept",
+                name="RAG",
+            )
+        )
+        repository.add_edge(
+            KnowledgeEdgeCreate(
+                knowledge_base_id=knowledge_base_id,
+                source_node_id=source_node.id,
+                target_node_id=concept_node.id,
+                type="supported_by_source",
+            )
+        )
+        repository.add_card(
+            CardCreate(
+                run_id=run.id,
+                type="key_point",
+                title="RAG",
+                summary="检索增强生成",
+                node_ids=[source_node.id, concept_node.id],
+            )
+        )
+
+        nodes, edges = repository.list_graph(knowledge_base_id)
+        card = repository.list_cards_for_run(run.id)[0]
+
+        assert [node.name for node in nodes] == ["RAG"]
+        assert edges == []
+        assert card.node_ids == [concept_node.id]
+    finally:
+        session.close()
+
+
 def test_nodes_are_deduplicated_inside_each_knowledge_base(tmp_path):
     repository, session = build_test_repository(tmp_path)
     try:
