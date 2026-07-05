@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from "./platform";
+
 export type HealthResponse = {
   status: "ok";
   app_name: string;
@@ -190,7 +192,7 @@ export type AssistantQueryInput = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
