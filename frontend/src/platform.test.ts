@@ -14,6 +14,7 @@ declare global {
 describe("platform helpers", () => {
   afterEach(() => {
     delete window.__AILKG_RUNTIME__;
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -36,5 +37,14 @@ describe("platform helpers", () => {
   it("falls back to development proxy path", () => {
     expect(getApiBaseUrl()).toBe("/api");
     expect(getRuntimeName()).toBe("web");
+  });
+
+  it("uses the local Android backend when running in Android WebView", () => {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 (Linux; Android 14; Pixel) AppleWebKit/537.36",
+    );
+
+    expect(getRuntimeName()).toBe("android");
+    expect(getApiBaseUrl()).toBe("http://127.0.0.1:43126");
   });
 });

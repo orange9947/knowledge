@@ -15,7 +15,10 @@ def start(data_dir: str, port: int) -> None:
     os.environ["AILKG_SECRET_FILE"] = f"{data_dir}/secrets.json"
     os.environ["AILKG_HOST"] = "127.0.0.1"
     os.environ["AILKG_PORT"] = str(port)
-    os.environ["AILKG_CORS_ORIGINS"] = "http://localhost,http://127.0.0.1,capacitor://localhost"
+    os.environ["AILKG_CORS_ORIGINS"] = (
+        "http://localhost,http://localhost:8080,http://127.0.0.1,"
+        "http://127.0.0.1:43126,capacitor://localhost"
+    )
 
     from app.local_server import run_local_server
 

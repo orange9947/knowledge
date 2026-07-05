@@ -1734,7 +1734,7 @@ h3 {
     top: 0;
     z-index: 15;
     height: auto;
-    padding: 10px 12px;
+    padding: max(10px, env(safe-area-inset-top)) 12px 10px;
     flex-direction: row;
     align-items: center;
     gap: 12px;
@@ -1914,7 +1914,7 @@ h3 {
   }
 
   .sidebar {
-    padding: 10px;
+    padding: max(10px, env(safe-area-inset-top)) 10px 10px;
   }
 
   .brand-mark {
