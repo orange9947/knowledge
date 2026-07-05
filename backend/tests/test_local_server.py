@@ -26,5 +26,5 @@ def test_local_server_builds_sqlite_database_url(tmp_path, monkeypatch):
 
     assert settings.host == "127.0.0.1"
     assert settings.port == 43125
-    assert settings.database_url == f"sqlite:///{tmp_path / 'knowledge.db'}"
+    assert settings.database_url == f"sqlite:///{(tmp_path / 'knowledge.db').as_posix()}"
     assert settings.secret_file == tmp_path / "secrets.json"

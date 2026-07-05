@@ -13,14 +13,19 @@ export function normalizeHealthUrl(apiBaseUrl: string): string {
   return `${apiBaseUrl.replace(/\/$/, "")}/health`;
 }
 
+export function sqlitePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
 export function buildBackendEnv(userDataPath: string, port: number): NodeJS.ProcessEnv {
   const dataDir = resolve(userDataPath);
+  const databasePath = sqlitePath(join(dataDir, "knowledge.db"));
   return {
     ...process.env,
     AILKG_HOST: "127.0.0.1",
     AILKG_PORT: String(port),
     AILKG_DATA_DIR: dataDir,
-    AILKG_DATABASE_URL: `sqlite:///${join(dataDir, "knowledge.db")}`,
+    AILKG_DATABASE_URL: `sqlite:///${databasePath}`,
     AILKG_SECRET_FILE: join(dataDir, "secrets.json"),
     AILKG_CORS_ORIGINS: "http://localhost,http://127.0.0.1:5173,http://localhost:5173,null,capacitor://localhost",
   };

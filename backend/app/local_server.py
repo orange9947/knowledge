@@ -19,7 +19,8 @@ class LocalServerSettings:
 
 def build_local_server_settings(port: int | None = None) -> LocalServerSettings:
     data_dir = Path(os.environ.get("AILKG_DATA_DIR", "data")).expanduser().resolve()
-    database_url = os.environ.get("AILKG_DATABASE_URL", f"sqlite:///{data_dir / 'knowledge.db'}")
+    database_path = (data_dir / "knowledge.db").as_posix()
+    database_url = os.environ.get("AILKG_DATABASE_URL", f"sqlite:///{database_path}")
     secret_file = Path(os.environ.get("AILKG_SECRET_FILE", data_dir / "secrets.json")).expanduser().resolve()
     return LocalServerSettings(
         host=os.environ.get("AILKG_HOST", "127.0.0.1"),

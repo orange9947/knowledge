@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBackendEnv, getBackendExecutablePath, normalizeHealthUrl } from "./backend.js";
+import { buildBackendEnv, getBackendExecutablePath, normalizeHealthUrl, sqlitePath } from "./backend.js";
 
 describe("desktop backend helpers", () => {
   it("builds backend environment paths inside Electron userData", () => {
@@ -14,6 +14,12 @@ describe("desktop backend helpers", () => {
 
   it("normalizes health URL", () => {
     expect(normalizeHealthUrl("http://127.0.0.1:43125")).toBe("http://127.0.0.1:43125/health");
+  });
+
+  it("normalizes Windows SQLite paths for SQLAlchemy URLs", () => {
+    expect(sqlitePath(String.raw`C:\Users\orange\AppData\Roaming\ailkg\knowledge.db`)).toBe(
+      "C:/Users/orange/AppData/Roaming/ailkg/knowledge.db",
+    );
   });
 
   it("falls back to packaged backend resource path", () => {

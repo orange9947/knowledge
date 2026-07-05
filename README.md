@@ -50,7 +50,7 @@ npm run dev
 
 当前桌面端是 Electron 外壳加本机 Python 后端，不是需要服务器部署的网站。打开 Windows 版有两种方式：
 
-1. 推荐方式：在 GitHub 仓库进入 `Actions`，打开 `Windows Desktop Package`，等待运行完成后下载 `windows-desktop-package`。解压后运行 `AI 学习知识图谱-Setup-0.1.0-x64.exe` 安装版，或运行 `AI 学习知识图谱-Portable-0.1.0-x64.exe` 便携版。
+1. 推荐方式：在 GitHub 仓库进入 `Actions`，打开 `Windows Desktop Package`，等待运行完成后下载 `windows-desktop-package`。解压后运行 `AILKG-Setup-0.1.0-x64.exe` 安装版，或运行 `AILKG-Portable-0.1.0-x64.exe` 便携版。
 2. 本地 Windows 构建：在 Windows 上安装 Node.js 22、Python 3.12 和 Git，然后执行下面的命令生成安装包。
 
 ```powershell

@@ -57,13 +57,13 @@
       ]
     },
     "nsis": {
-      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "artifactName": "AILKG-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
     },
     "portable": {
-      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
+      "artifactName": "AILKG-Portable-${version}-${arch}.${ext}"
     }
   }
 }

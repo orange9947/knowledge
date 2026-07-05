@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if [ -f .venv/bin/activate ]; then
-  # The root backend npm script expects pytest on PATH.
+  # The root backend npm script expects the active Python environment on PATH.
   # shellcheck disable=SC1091
   source .venv/bin/activate
 fi

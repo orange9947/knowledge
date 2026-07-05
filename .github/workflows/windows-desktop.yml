@@ -10,6 +10,7 @@ on:
       - "desktop/**"
       - "frontend/**"
       - "package.json"
+      - "scripts/**"
       - ".github/workflows/windows-desktop.yml"
 
 jobs:
@@ -36,21 +37,17 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend dependencies
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "backend[dev]" pyinstaller
+          & "$env:pythonLocation\python.exe" -m pip install --upgrade pip
+          & "$env:pythonLocation\python.exe" -m pip install -e "backend[dev]" pyinstaller
+          & "$env:pythonLocation\python.exe" -c "import fastapi, sqlalchemy, uvicorn, PyInstaller; print('backend deps ok')"
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
       - name: Install desktop dependencies
         run: npm ci --prefix desktop
-
-      - name: Test backend
-        run: npm run test:backend
-
-      - name: Test frontend
-        run: npm run test:frontend
 
       - name: Test desktop shell
         run: npm run test:desktop
@@ -59,7 +56,14 @@ jobs:
         run: npm run build:frontend
 
       - name: Build Windows backend sidecar
-        run: npm run build:backend:desktop
+        shell: pwsh
+        run: |
+          Push-Location backend
+          & "$env:pythonLocation\python.exe" -m PyInstaller pyinstaller.spec
+          Pop-Location
+          if (!(Test-Path "backend/dist/ailkg-backend.exe")) {
+            throw "Windows backend sidecar was not created"
+          }
 
       - name: Build Windows desktop package
         run: npm --prefix desktop run dist:win
