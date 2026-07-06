@@ -75,6 +75,7 @@ import {
   type LearningRun,
   type ModelSettings,
   type ModelSettingsInput,
+  type RunDetail,
   type SourceRecord,
   type SourceSettings,
   type SourceSettingsInput,
@@ -401,6 +402,8 @@ function App() {
   const [sourceDrafts, setSourceDrafts] = useState<SourceDraft[]>([]);
   const [runSources, setRunSources] = useState<SourceRecord[]>([]);
   const [cards, setCards] = useState<LearningCard[]>([]);
+  const [historyRunDetail, setHistoryRunDetail] = useState<RunDetail | null>(null);
+  const [historyDetailOpen, setHistoryDetailOpen] = useState(false);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
   const [selectedNode, setSelectedNode] = useState<KnowledgeNodeDetail | null>(null);
   const [nodeForm, setNodeForm] = useState<NodeFormState>(emptyNodeForm);
@@ -482,6 +485,8 @@ function App() {
         setGraph(graphData);
         setRunSources([]);
         setCards([]);
+        setHistoryRunDetail(null);
+        setHistoryDetailOpen(false);
         setSelectedCardIds([]);
         setKnowledgeBasePrompt(knowledgeBases.find((item) => item.id === activeKnowledgeBaseId)?.learning_prompt ?? "");
         setSelectedNode(null);
@@ -716,6 +721,8 @@ function App() {
       setActiveKnowledgeBaseId(nextBaseId);
       setCards([]);
       setRunSources([]);
+      setHistoryRunDetail(null);
+      setHistoryDetailOpen(false);
       setSelectedNode(null);
       setSelectedRun(null);
       if (nextBaseId) {
@@ -1085,16 +1092,28 @@ function App() {
     setMessage("正在加载任务详情...");
     try {
       const detail = await fetchRunDetail(runId);
-      setSelectedRun(detail.run);
-      setCards(detail.cards);
-      setSelectedCardIds([]);
-      setRunSources(detail.sources);
       setExpandedLearningItem(null);
-      setActiveView("learn");
-      setMessage(`已打开任务 #${detail.run.id}：${detail.run.keyword}`);
+      setHistoryRunDetail(detail);
+      setHistoryDetailOpen(true);
+      setMessage(`已展开历史任务 #${detail.run.id}：${detail.run.keyword}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加载任务详情失败");
     }
+  }
+
+  function handleToggleHistoryDetailOpen() {
+    setHistoryDetailOpen((current) => !current);
+  }
+
+  function handleOpenHistoryRunInLearning() {
+    if (!historyRunDetail) return;
+    setSelectedRun(historyRunDetail.run);
+    setCards(historyRunDetail.cards);
+    setRunSources(historyRunDetail.sources);
+    setSelectedCardIds([]);
+    setExpandedLearningItem(null);
+    setActiveView("learn");
+    setMessage(`已在学习页打开任务 #${historyRunDetail.run.id}：${historyRunDetail.run.keyword}`);
   }
 
   async function handleToggleRunRetention(run: LearningRun) {
@@ -1122,6 +1141,10 @@ function App() {
         setCards([]);
         setRunSources([]);
       }
+      if (historyRunDetail?.run.id === run.id) {
+        setHistoryRunDetail(null);
+        setHistoryDetailOpen(false);
+      }
       await refreshActiveKnowledgeBase();
       setMessage(`已删除任务 #${run.id}`);
     } catch (error) {
@@ -1136,6 +1159,7 @@ function App() {
     try {
       const updated = await updateSourceRetention(source.id, !source.is_pinned);
       setRunSources((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setHistoryRunDetail((current) => syncRunDetailSource(current, updated));
       setMessage(updated.is_pinned ? `已保留来源 #${updated.id}` : `已取消保留来源 #${updated.id}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "更新来源保留状态失败");
@@ -1150,6 +1174,7 @@ function App() {
     try {
       const updated = await clearSourceText(source.id);
       setRunSources((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setHistoryRunDetail((current) => syncRunDetailSource(current, updated));
       setMessage(`已清空来源 #${updated.id} 的正文`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "清空来源正文失败");
@@ -1164,6 +1189,19 @@ function App() {
     try {
       await deleteSource(source.id);
       setRunSources((current) => current.filter((item) => item.id !== source.id));
+      setHistoryRunDetail((current) => current
+        ? {
+            ...current,
+            run: current.run.id === source.run_id
+              ? { ...current.run, source_count: Math.max(0, current.run.source_count - 1) }
+              : current.run,
+            sources: current.sources.filter((item) => item.id !== source.id),
+            cards: current.cards.map((card) => ({
+              ...card,
+              source_ids: card.source_ids.filter((sourceId) => sourceId !== source.id),
+            })),
+          }
+        : current);
       if (selectedRun) {
         const detail = await fetchRunDetail(selectedRun.id);
         setSelectedRun(detail.run);
@@ -1342,14 +1380,16 @@ function App() {
               onDeleteRun={handleDeleteRun}
               onDeleteSource={handleDeleteSource}
               onOpenCard={(card) => setExpandedLearningItem({ kind: "card", item: card })}
+              onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
+              onOpenRunInLearning={handleOpenHistoryRunInLearning}
               onSelectRun={handleSelectRun}
               onStatusChange={setStatusFilter}
+              onToggleDetailOpen={handleToggleHistoryDetailOpen}
               onToggleSourceRetention={handleToggleSourceRetention}
               onToggleRunRetention={handleToggleRunRetention}
-              cards={cards}
-              runSources={runSources}
+              detailOpen={historyDetailOpen}
+              runDetail={historyRunDetail}
               runs={filteredRuns}
-              selectedRun={selectedRun}
               statusFilter={statusFilter}
             />
           </section>
@@ -2956,7 +2996,7 @@ function KnowledgeBasePanel({
 
 function HistoryPanel({
   busy,
-  cards,
+  detailOpen,
   filter,
   onClearText,
   onDeleteRun,
@@ -2966,16 +3006,18 @@ function HistoryPanel({
   onImport,
   onDeleteSource,
   onOpenCard,
+  onOpenSource,
+  onOpenRunInLearning,
   onSelectRun,
   onStatusChange,
+  onToggleDetailOpen,
   onToggleSourceRetention,
   onToggleRunRetention,
-  runSources,
-  selectedRun,
+  runDetail,
   statusFilter,
 }: {
   busy: boolean;
-  cards: LearningCard[];
+  detailOpen: boolean;
   filter: string;
   runs: LearningRun[];
   onClearText: (source: SourceRecord) => void;
@@ -2985,14 +3027,20 @@ function HistoryPanel({
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
   onDeleteSource: (source: SourceRecord) => void;
   onOpenCard: (card: LearningCard) => void;
+  onOpenSource: (source: SourceRecord) => void;
+  onOpenRunInLearning: () => void;
   onSelectRun: (runId: number) => void;
   onStatusChange: (value: string) => void;
+  onToggleDetailOpen: () => void;
   onToggleSourceRetention: (source: SourceRecord) => void;
   onToggleRunRetention: (run: LearningRun) => void;
-  runSources: SourceRecord[];
-  selectedRun: LearningRun | null;
+  runDetail: RunDetail | null;
   statusFilter: string;
 }) {
+  const selectedRun = runDetail?.run ?? null;
+  const cards = runDetail?.cards ?? [];
+  const runSources = runDetail?.sources ?? [];
+
   return (
     <div className="panel history-panel">
       <div className="panel-heading">
@@ -3066,49 +3114,78 @@ function HistoryPanel({
           ))
         )}
       </div>
-      <div className="history-detail">
-        {selectedRun ? (
-          <>
-            <div className="detail-grid">
-              <div>
-                <span>已选任务</span>
-                <strong>{selectedRun.keyword}</strong>
-              </div>
-              <div>
-                <span>素材数</span>
-                <strong>{selectedRun.source_count}</strong>
-              </div>
-              <div>
-                <span>状态</span>
-                <strong>{statusLabel(selectedRun.status)}</strong>
-              </div>
+      {selectedRun ? (
+        <details
+          className="history-detail"
+          open={detailOpen}
+        >
+          <summary
+            className="history-detail-summary"
+            onClick={(event) => {
+              event.preventDefault();
+              onToggleDetailOpen();
+            }}
+          >
+            <span>
+              <strong>{selectedRun.keyword}</strong>
+              <small>任务 #{selectedRun.id} · {cards.length} 张卡片 · {runSources.length} 个来源</small>
+            </span>
+            <span className="history-detail-toggle">{detailOpen ? "收起" : "展开"}</span>
+          </summary>
+          <div className="history-detail-actions">
+            <button className="secondary-button" type="button" onClick={onOpenRunInLearning}>
+              <BookOpen size={16} />
+              <span>在学习页打开</span>
+            </button>
+          </div>
+          <div className="detail-grid">
+            <div>
+              <span>已选任务</span>
+              <strong>{selectedRun.keyword}</strong>
             </div>
-            <div className="history-card-list" aria-label="历史知识卡片">
-              <div className="history-card-heading">
-                <strong>知识卡片</strong>
-                <span>{cards.length} 张</span>
-              </div>
-              {cards.length === 0 ? (
-                <p className="empty-state compact">这个任务暂无知识卡片。</p>
-              ) : (
-                cards.slice(0, 8).map((card) => (
-                  <button className="history-card" key={card.id} type="button" onClick={() => onOpenCard(card)}>
-                    <span className={`approval-badge ${card.approval_status}`}>
-                      {card.approval_status === "approved" ? "已加入" : "待加入"}
-                    </span>
-                    <strong>{card.title}</strong>
-                    <small>{card.summary}</small>
-                  </button>
-                ))
-              )}
+            <div>
+              <span>素材数</span>
+              <strong>{runSources.length}</strong>
             </div>
-            <div className="mini-source-list">
-              {runSources.slice(0, 5).map((source) => (
+            <div>
+              <span>状态</span>
+              <strong>{statusLabel(selectedRun.status)}</strong>
+            </div>
+          </div>
+          <div className="history-card-list" aria-label="历史知识卡片">
+            <div className="history-card-heading">
+              <strong>知识卡片</strong>
+              <span>{cards.length} 张</span>
+            </div>
+            {cards.length === 0 ? (
+              <p className="empty-state compact">这个任务暂无知识卡片。</p>
+            ) : (
+              cards.map((card) => (
+                <button className="history-card" key={card.id} type="button" onClick={() => onOpenCard(card)}>
+                  <span className={`approval-badge ${card.approval_status}`}>
+                    {card.approval_status === "approved" ? "已加入" : "待加入"}
+                  </span>
+                  <strong>{card.title}</strong>
+                  <small>{card.summary}</small>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="mini-source-list">
+            <div className="history-card-heading">
+              <strong>素材来源</strong>
+              <span>{runSources.length} 条</span>
+            </div>
+            {runSources.length === 0 ? (
+              <p className="empty-state compact">这个任务暂无素材来源。</p>
+            ) : (
+              runSources.map((source) => (
                 <div className="mini-source-row" key={source.id}>
-                  <a href={source.url} target="_blank" rel="noreferrer">
+                  <button className="mini-source-open" type="button" onClick={() => onOpenSource(source)}>
                     <span className={`extract-status ${source.status}`}>{statusLabel(source.status)}</span>
                     <strong>{source.title || source.site || source.url}</strong>
-                  </a>
+                    <small>{source.snippet || source.extracted_text || source.status_reason || source.url}</small>
+                  </button>
                   <div className="row-actions">
                     <button
                       aria-label={source.is_pinned ? `取消保留来源 ${source.id}` : `保留来源 ${source.id}`}
@@ -3142,13 +3219,15 @@ function HistoryPanel({
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="empty-state compact">选择一个任务查看抓取来源。</p>
-        )}
-      </div>
+              ))
+            )}
+          </div>
+        </details>
+      ) : (
+        <div className="history-detail history-detail-empty">
+          <p className="empty-state compact">选择一条任务查看历史结果。</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -3245,6 +3324,14 @@ function toNodeDetail(node: KnowledgeNode): KnowledgeNodeDetail {
     ...node,
     cards: Array.isArray(detail.cards) ? detail.cards : [],
     sources: Array.isArray(detail.sources) ? detail.sources : [],
+  };
+}
+
+function syncRunDetailSource(detail: RunDetail | null, source: SourceRecord): RunDetail | null {
+  if (!detail || detail.run.id !== source.run_id) return detail;
+  return {
+    ...detail,
+    sources: detail.sources.map((item) => (item.id === source.id ? source : item)),
   };
 }
 

@@ -1851,6 +1851,71 @@ textarea:disabled,
   background: #fbfcfb;
 }
 
+.history-detail-empty {
+  min-height: 62px;
+  display: grid;
+  align-items: center;
+}
+
+.history-detail-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.history-detail-summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-detail-summary > span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.history-detail-summary strong,
+.history-detail-summary small,
+.mini-source-list small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.history-detail-summary strong {
+  color: var(--ink);
+}
+
+.history-detail-summary small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.history-detail-toggle {
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--green-dark);
+  background: var(--paper);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.history-detail[open] .detail-grid {
+  margin-top: 12px;
+}
+
+.history-detail-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1956,21 +2021,39 @@ textarea:disabled,
   border-top: 1px solid var(--line);
 }
 
+.mini-source-open,
 .mini-source-list a {
+  width: 100%;
   min-height: 40px;
+  padding: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
+  border: 0;
+  border-radius: 0;
   color: var(--ink);
+  text-align: left;
   text-decoration: none;
+  background: transparent;
 }
 
-.mini-source-list strong {
+.mini-source-list strong,
+.mini-source-open strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mini-source-list small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  display: -webkit-box;
+  font-size: 0.78rem;
+  line-height: 1.42;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .knowledge-list {

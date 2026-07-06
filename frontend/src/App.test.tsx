@@ -1126,26 +1126,39 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "运行记录" })).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "筛选历史记录" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
-    expect(await screen.findByText("已打开任务 #7：RAG")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "知识提炼" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "文章素材" })).toBeInTheDocument();
+    expect(await screen.findByText("已展开历史任务 #7：RAG")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "运行记录" })).toBeInTheDocument();
+    const historySummary = screen.getByText("任务 #7 · 2 张卡片 · 1 个来源");
+    const historyDetails = historySummary.closest("details");
+    expect(historyDetails).toHaveAttribute("open");
+    expect(screen.getByLabelText("历史知识卡片")).toBeInTheDocument();
+    expect(screen.getByText("素材来源")).toBeInTheDocument();
     expect(screen.getByText("RAG repositories")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /RAG repositories/ }));
+    expect(screen.getByRole("dialog", { name: "素材详情" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭详情" }));
     expect(screen.getByRole("button", { name: /RAG 本次总结/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /RAG 本次总结/ }));
     expect(screen.getByRole("dialog", { name: "知识卡片详情" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "关闭详情" }));
+    await user.click(screen.getByText("收起"));
+    expect(historyDetails).not.toHaveAttribute("open");
+    await user.click(screen.getByText("展开"));
+    expect(historyDetails).toHaveAttribute("open");
+    await user.click(screen.getByRole("button", { name: "在学习页打开" }));
+    expect(await screen.findByText("已在学习页打开任务 #7：RAG")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "学习" }));
     await user.click(screen.getByRole("button", { name: "总结本次素材" }));
     expect(await screen.findByText("重排序")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "历史" }));
     await user.click(screen.getByRole("button", { name: "保留任务 7" }));
     expect(await screen.findByText("已保留任务 #7")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "保留来源 7" }));
-    expect(await screen.findByText("已保留来源 #7")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "清空正文 7" }));
-    expect(await screen.findByText("已清空来源 #7 的正文")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "删除来源 7" }));
-    expect(await screen.findByText("已删除来源 #7")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保留来源 1" }));
+    expect(await screen.findByText("已保留来源 #1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "清空正文 1" }));
+    expect(await screen.findByText("已清空来源 #1 的正文")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除来源 1" }));
+    expect(await screen.findByText("已删除来源 #1")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
@@ -1211,11 +1224,11 @@ describe("App", () => {
       expect.objectContaining({ method: "PATCH" }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sources/7/clear-text",
+      "/api/sources/1/clear-text",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sources/7",
+      "/api/sources/1",
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
