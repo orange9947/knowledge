@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import init_db
 from app.discovery import SourceCandidate
 from app.repositories import KnowledgeRepository
+from app.run_control import run_pause_registry
 from app.schemas import LearningRunCreate, SourceConfigWrite, SourceCreate
 from app.services import LearningRunService
 
@@ -18,6 +19,25 @@ class FakeCrawler:
             status="success",
             extracted_text="AI Agent source body " * 20,
             content_hash="hash",
+            quality_score=0.8,
+        )
+
+
+class PauseAfterFirstCrawler:
+    def __init__(self, repository: KnowledgeRepository):
+        self.repository = repository
+
+    def crawl(self, run_id: int, candidate: SourceCandidate) -> SourceCreate:
+        run = self.repository.get_run(run_id)
+        run_pause_registry.request_pause(run_id, run.created_at if run else None)
+        return SourceCreate(
+            run_id=run_id,
+            url=candidate.url,
+            title=candidate.title,
+            site=candidate.site,
+            status="success",
+            extracted_text="AI Agent source body " * 20,
+            content_hash="paused-hash",
             quality_score=0.8,
         )
 
@@ -174,6 +194,42 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path, monkeypatch)
         assert len(nodes) >= 2
         assert len(edges) >= 1
     finally:
+        session.close()
+
+
+def test_collect_sources_can_pause_after_current_source(tmp_path, monkeypatch):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'pause-service.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    init_db(engine)
+    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = Session()
+    run_id = None
+    try:
+        repository = KnowledgeRepository(session)
+        repository.ensure_default_knowledge_base()
+        repository.replace_source_configs(
+            [
+                SourceConfigWrite(name="Docs 1", type="entry_url", enabled=True, url_or_domain="https://docs.example.com/one"),
+                SourceConfigWrite(name="Docs 2", type="entry_url", enabled=True, url_or_domain="https://docs.example.com/two"),
+            ]
+        )
+        monkeypatch.setattr("app.discovery.default_fetch_text", lambda url: "")
+        run = repository.create_run(LearningRunCreate(keyword="AI Agent", mode="light"))
+        run_id = run.id
+
+        updated = LearningRunService(session, crawler=PauseAfterFirstCrawler(repository)).collect_sources(run.id)
+
+        assert updated is not None
+        assert updated.status == "paused"
+        sources = repository.list_sources_for_run(run.id)
+        assert len(sources) == 1
+        assert sources[0].url == "https://docs.example.com/one"
+        assert repository.list_cards_for_run(run.id) == []
+    finally:
+        if run_id is not None:
+            run_pause_registry.clear(run_id)
         session.close()
 
 

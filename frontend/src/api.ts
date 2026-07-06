@@ -314,6 +314,12 @@ export async function aiCollectRun(runId: number): Promise<LearningRun> {
   });
 }
 
+export async function pauseRunCollection(runId: number): Promise<LearningRun> {
+  return request<LearningRun>(`/runs/${runId}/pause`, {
+    method: "POST",
+  });
+}
+
 export async function summarizeRun(runId: number): Promise<LearningRun> {
   return request<LearningRun>(`/runs/${runId}/summarize`, {
     method: "POST",

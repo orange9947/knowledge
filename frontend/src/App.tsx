@@ -22,6 +22,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Trash2,
   Upload,
   X,
@@ -51,6 +52,7 @@ import {
   fetchRuns,
   fetchSourceSettings,
   importKnowledge,
+  pauseRunCollection,
   queryAssistant,
   saveModelSettings,
   saveSourceSettings,
@@ -85,6 +87,12 @@ const ANDROID_API_BOOT_DELAY_MS = 500;
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
 type SourceDraft = SourceSettingsInput & { id: number };
+type CollectionTask = {
+  kind: "standard" | "ai";
+  knowledgeBaseId: number;
+  pausing: boolean;
+  runId: number;
+};
 
 const modeLabels: Record<string, string> = {
   light: "轻量",
@@ -98,6 +106,7 @@ const statusLabels: Record<string, string> = {
   disabled: "已停用",
   failed: "失败",
   partial: "部分成功",
+  paused: "已暂停",
   pending: "等待中",
   running: "运行中",
   skipped: "已跳过",
@@ -404,8 +413,11 @@ function App() {
   const [graphOverviewSignal, setGraphOverviewSignal] = useState(0);
   const [message, setMessage] = useState<string>("准备就绪");
   const [busy, setBusy] = useState(false);
+  const [collectionTask, setCollectionTask] = useState<CollectionTask | null>(null);
   const runtimeName = getRuntimeName();
   const apiBaseUrl = getApiBaseUrl();
+  const isCollecting = collectionTask !== null;
+  const uiLocked = busy || isCollecting;
 
   useEffect(() => {
     let mounted = true;
@@ -537,6 +549,29 @@ function App() {
     setGraph(graphData);
     syncSelectedNodeFromGraph(graphData);
     setSelectedRun(run);
+    return { collectedSources, generatedCards, graphData };
+  }
+
+  async function finishCollectedRun(run: LearningRun, knowledgeBaseId: number) {
+    const analysis = await refreshRunAnalysis(run, knowledgeBaseId);
+    return {
+      collectedSources: analysis?.collectedSources ?? [],
+      generatedCards: analysis?.generatedCards ?? [],
+    };
+  }
+
+  async function handlePauseCollection() {
+    if (!collectionTask || collectionTask.pausing) return;
+    setCollectionTask((current) => (current ? { ...current, pausing: true } : current));
+    setMessage("正在请求暂停采集，当前步骤结束后停止...");
+    try {
+      const pausedRun = await pauseRunCollection(collectionTask.runId);
+      await refreshRunAnalysis(pausedRun, collectionTask.knowledgeBaseId);
+      setMessage(`任务 #${pausedRun.id} ${statusLabel(pausedRun.status)}，已保留当前采集结果`);
+    } catch (error) {
+      setCollectionTask((current) => (current ? { ...current, pausing: false } : current));
+      setMessage(error instanceof Error ? error.message : "暂停采集失败");
+    }
   }
 
   function syncSelectedNodeFromGraph(graphData: GraphData) {
@@ -702,21 +737,22 @@ function App() {
       setMessage("请先创建或选择知识库");
       return;
     }
+    const knowledgeBaseId = activeKnowledgeBaseId;
     setBusy(true);
     setMessage("正在创建学习任务...");
     try {
-      const run = await createRun(keyword.trim(), mode, activeKnowledgeBaseId, runPrompt);
+      const run = await createRun(keyword.trim(), mode, knowledgeBaseId, runPrompt);
+      setCollectionTask({ kind: "standard", knowledgeBaseId, pausing: false, runId: run.id });
       setRuns((current) => [run, ...current]);
       setMessage(`任务 #${run.id} 已创建，正在抓取来源...`);
       const collected = await collectRun(run.id);
-      await refreshRunAnalysis(collected, activeKnowledgeBaseId);
-      const collectedSources = await fetchRunSources(run.id);
-      const generatedCards = await fetchRunCards(run.id);
+      const { collectedSources, generatedCards } = await finishCollectedRun(collected, knowledgeBaseId);
       const analysisMode = analysisModeLabel(generatedCards, modelSettings);
       setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；${analysisMode}，素材来源 ${collectedSources.length} 条`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "创建学习任务失败");
     } finally {
+      setCollectionTask(null);
       setBusy(false);
     }
   }
@@ -730,20 +766,21 @@ function App() {
       setMessage("请先创建或选择知识库");
       return;
     }
+    const knowledgeBaseId = activeKnowledgeBaseId;
     setBusy(true);
     setMessage("正在创建 AI 采集任务...");
     try {
-      const run = await createRun(keyword.trim(), mode, activeKnowledgeBaseId, runPrompt);
+      const run = await createRun(keyword.trim(), mode, knowledgeBaseId, runPrompt);
+      setCollectionTask({ kind: "ai", knowledgeBaseId, pausing: false, runId: run.id });
       setRuns((current) => [run, ...current]);
       setMessage(`任务 #${run.id} 已创建，AI 正在筛选采集目标...`);
       const collected = await aiCollectRun(run.id);
-      await refreshRunAnalysis(collected, activeKnowledgeBaseId);
-      const collectedSources = await fetchRunSources(run.id);
-      const generatedCards = await fetchRunCards(run.id);
+      const { collectedSources, generatedCards } = await finishCollectedRun(collected, knowledgeBaseId);
       setMessage(`任务 #${run.id} ${statusLabel(collected.status)}；AI 采集并总结，素材来源 ${collectedSources.length} 条，卡片 ${generatedCards.length} 张`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "AI 采集失败");
     } finally {
+      setCollectionTask(null);
       setBusy(false);
     }
   }
@@ -1157,7 +1194,7 @@ function App() {
               <Library size={16} aria-hidden="true" />
               <select
                 aria-label="知识库"
-                disabled={knowledgeBases.length === 0}
+                disabled={knowledgeBases.length === 0 || uiLocked}
                 value={activeKnowledgeBaseId ?? ""}
                 onChange={(event) => setActiveKnowledgeBaseId(Number(event.target.value))}
               >
@@ -1182,7 +1219,8 @@ function App() {
         {activeView === "learn" ? (
           <section className="view-stack" aria-label="学习工作区">
             <RunPanel
-              busy={busy}
+              busy={uiLocked}
+              collectionTask={collectionTask}
               knowledgeBasePrompt={knowledgeBasePrompt}
               keyword={keyword}
               mode={mode}
@@ -1191,6 +1229,7 @@ function App() {
               onKeywordChange={setKeyword}
               onAiCollect={handleAiCollectRun}
               onModeChange={setMode}
+              onPauseCollection={handlePauseCollection}
               onRun={handleCreateRun}
               onRunPromptChange={setRunPrompt}
               runPrompt={runPrompt}
@@ -1198,7 +1237,7 @@ function App() {
             />
             <section className="dashboard-grid learn-grid">
               <CardsPanel
-                busy={busy}
+                busy={uiLocked}
                 cards={cards}
                 modelForm={modelForm}
                 modelSettings={modelSettings}
@@ -1215,7 +1254,7 @@ function App() {
                 selectedRun={selectedRun}
               />
               <ExtractionPanel
-                busy={busy}
+                busy={uiLocked}
                 onClearText={handleClearSourceText}
                 onDeleteSource={handleDeleteSource}
                 onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
@@ -1223,7 +1262,7 @@ function App() {
                 runSources={runSources}
               />
               <SourcesPanel
-                busy={busy}
+                busy={uiLocked}
                 onSaveDefaultSources={handleSaveDefaultSources}
                 showSaveAction={false}
                 sourceRows={sourceRows}
@@ -1241,7 +1280,7 @@ function App() {
               assistantQuestion={assistantQuestion}
               assistantResponse={assistantResponse}
               assistantSelectedCardIds={assistantSelectedCardIds}
-              busy={busy}
+              busy={uiLocked}
               graph={graph}
               isEditingNode={isEditingNode}
               knowledgeBaseName={activeKnowledgeBase ? knowledgeBaseName(activeKnowledgeBase) : "当前知识库"}
@@ -1270,7 +1309,7 @@ function App() {
         {activeView === "history" ? (
           <section className="single-view" aria-label="历史记录工作区">
             <HistoryPanel
-              busy={busy}
+              busy={uiLocked}
               filter={historyFilter}
               onClearText={handleClearSourceText}
               onExport={handleExport}
@@ -1294,7 +1333,7 @@ function App() {
           <section className="dashboard-grid settings-grid" aria-label="设置工作区">
             <KnowledgeBasePanel
               activeKnowledgeBaseId={activeKnowledgeBaseId}
-              busy={busy}
+              busy={uiLocked}
               knowledgeBases={knowledgeBases}
               newKnowledgeBaseName={newKnowledgeBaseName}
               onCreate={handleCreateKnowledgeBase}
@@ -1303,7 +1342,7 @@ function App() {
               onSelect={setActiveKnowledgeBaseId}
             />
             <SettingsPanel
-              busy={busy}
+              busy={uiLocked}
               modelForm={modelForm}
               modelSettings={modelSettings}
               onModelFormChange={setModelForm}
@@ -1311,7 +1350,7 @@ function App() {
               onTestModel={handleTestModel}
             />
             <SourcesPanel
-              busy={busy}
+              busy={uiLocked}
               onAddSource={handleAddSource}
               onRemoveSource={handleRemoveSource}
               onResetSources={handleResetSources}
@@ -1334,6 +1373,7 @@ function App() {
 
 type RunPanelProps = {
   busy: boolean;
+  collectionTask: CollectionTask | null;
   knowledgeBasePrompt: string;
   keyword: string;
   mode: (typeof modes)[number];
@@ -1343,6 +1383,7 @@ type RunPanelProps = {
   onKnowledgeBasePromptChange: (value: string) => void;
   onKeywordChange: (value: string) => void;
   onModeChange: (value: (typeof modes)[number]) => void;
+  onPauseCollection: () => void;
   onRun: () => void;
   onRunPromptChange: (value: string) => void;
   onSaveKnowledgePrompt: () => void;
@@ -1350,6 +1391,7 @@ type RunPanelProps = {
 
 function RunPanel({
   busy,
+  collectionTask,
   knowledgeBasePrompt,
   keyword,
   mode,
@@ -1359,6 +1401,7 @@ function RunPanel({
   onKnowledgeBasePromptChange,
   onKeywordChange,
   onModeChange,
+  onPauseCollection,
   onRun,
   onRunPromptChange,
   onSaveKnowledgePrompt,
@@ -1373,13 +1416,19 @@ function RunPanel({
       <div className="run-controls">
         <label className="keyword-field">
           <Search size={18} aria-hidden="true" />
-          <input value={keyword} onChange={(event) => onKeywordChange(event.target.value)} aria-label="关键词" />
+          <input
+            value={keyword}
+            onChange={(event) => onKeywordChange(event.target.value)}
+            aria-label="关键词"
+            disabled={busy}
+          />
         </label>
         <div className="mode-control" aria-label="运行模式">
           {modes.map((item) => (
             <button
               key={item}
               className={mode === item ? "selected" : ""}
+              disabled={busy}
               onClick={() => onModeChange(item)}
               type="button"
             >
@@ -1395,6 +1444,17 @@ function RunPanel({
           <Sparkles size={17} />
           <span>AI 采集</span>
         </button>
+        {collectionTask ? (
+          <button
+            className="run-button pause-run-button"
+            type="button"
+            onClick={onPauseCollection}
+            disabled={collectionTask.pausing}
+          >
+            <Square size={15} fill="currentColor" />
+            <span>{collectionTask.pausing ? "正在暂停" : `暂停${collectionTask.kind === "ai" ? " AI" : ""}采集`}</span>
+          </button>
+        ) : null}
       </div>
       <div className="preference-controls">
         <label>
@@ -1404,6 +1464,7 @@ function RunPanel({
             rows={2}
             value={knowledgeBasePrompt}
             onChange={(event) => onKnowledgeBasePromptChange(event.target.value)}
+            disabled={busy}
           />
         </label>
         <label>
@@ -1413,6 +1474,7 @@ function RunPanel({
             rows={2}
             value={runPrompt}
             onChange={(event) => onRunPromptChange(event.target.value)}
+            disabled={busy}
           />
         </label>
         <button
@@ -2726,7 +2788,7 @@ function KnowledgeBasePanel({
             className={item.id === activeKnowledgeBaseId ? "knowledge-row selected" : "knowledge-row"}
             key={item.id}
           >
-            <button className="knowledge-select-row" onClick={() => onSelect(item.id)} type="button">
+            <button className="knowledge-select-row" disabled={busy} onClick={() => onSelect(item.id)} type="button">
               <strong>{knowledgeBaseName(item)}</strong>
               <span>{item.description || "暂无描述"}</span>
             </button>

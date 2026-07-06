@@ -7,6 +7,7 @@ from app.crawler import SourceCrawler
 from app.discovery import SourceCandidate, discover_candidates, site_from_url
 from app.pydantic_compat import model_dump
 from app.repositories import KnowledgeRepository
+from app.run_control import run_pause_registry
 from app.schemas import CardCreate, KnowledgeEdgeCreate, KnowledgeNodeCreate
 
 
@@ -30,6 +31,8 @@ class LearningRunService:
         self.repository.update_run_status(run, "running")
         configs = self.repository.ensure_default_source_configs()
         candidates = discover_candidates(run.keyword, configs, run.mode)
+        if self._pause_requested(run):
+            return run
         if not candidates:
             self.repository.update_run_status(
                 run,
@@ -41,9 +44,13 @@ class LearningRunService:
 
         statuses: list[str] = []
         for candidate in candidates:
+            if self._pause_requested(run):
+                return run
             source_payload = self.crawler.crawl(run.id, candidate)
             statuses.append(source_payload.status)
             self.repository.add_source(source_payload)
+            if self._pause_requested(run):
+                return run
 
         if any(status == "success" for status in statuses):
             final_status = "completed" if all(status == "success" for status in statuses) else "partial"
@@ -58,7 +65,10 @@ class LearningRunService:
             error_summary=error_summary,
         )
         if final_status in {"completed", "partial"}:
+            if self._pause_requested(run):
+                return run
             self.generate_learning_output(run.id)
+        run_pause_registry.clear(run.id)
         return run
 
     def generate_learning_output(self, run_id: int):
@@ -75,6 +85,8 @@ class LearningRunService:
             knowledge_base.learning_prompt if knowledge_base else None,
             run.learning_prompt,
         )
+        if self._pause_requested(run):
+            return run
         self._persist_ai_candidates(run.id, sources, output)
         return run
 
@@ -96,6 +108,8 @@ class LearningRunService:
             knowledge_base.learning_prompt if knowledge_base else None,
             run.learning_prompt,
         )
+        if self._pause_requested(run):
+            return run
         self.repository.delete_cards_for_run_by_types(run.id, {"summary", "keyword_hint"}, approval_status="candidate")
         self._persist_ai_candidates(run.id, sources, output)
         return run
@@ -118,6 +132,8 @@ class LearningRunService:
                 knowledge_base.learning_prompt if knowledge_base else None,
                 run.learning_prompt,
             )
+            if self._pause_requested(run):
+                return run
         except AIProviderError as exc:
             self.repository.update_run_status(
                 run,
@@ -138,6 +154,8 @@ class LearningRunService:
         existing_urls = {source.url for source in self.repository.list_sources_for_run(run.id)}
         statuses: list[str] = []
         for target in targets:
+            if self._pause_requested(run):
+                return run
             if target.url in existing_urls:
                 continue
             candidate = SourceCandidate(
@@ -149,6 +167,8 @@ class LearningRunService:
             source_payload = self.crawler.crawl(run.id, candidate)
             statuses.append(source_payload.status)
             self.repository.add_source(source_payload)
+            if self._pause_requested(run):
+                return run
 
         if any(status == "success" for status in statuses):
             final_status = "completed" if all(status == "success" for status in statuses) else "partial"
@@ -164,6 +184,8 @@ class LearningRunService:
         )
         if final_status in {"completed", "partial"}:
             try:
+                if self._pause_requested(run):
+                    return run
                 self.summarize_run(run.id)
             except AIProviderError as exc:
                 self.repository.update_run_status(
@@ -173,7 +195,22 @@ class LearningRunService:
                     error_summary=str(exc),
                 )
                 raise
+        run_pause_registry.clear(run.id)
         return run
+
+    def pause_run(self, run_id: int):
+        run = self.repository.get_run(run_id)
+        if run is None:
+            return None
+        if run.status not in {"pending", "running"}:
+            return run
+        run_pause_registry.request_pause(run.id, run.created_at)
+        return self.repository.update_run_status(
+            run,
+            "paused",
+            completed_at=datetime.now(timezone.utc),
+            error_summary="采集已暂停，已保留当前已完成的来源和卡片。",
+        )
 
     def approve_cards(self, run_id: int, card_ids: list[int]):
         run = self.repository.get_run(run_id)
@@ -259,6 +296,18 @@ class LearningRunService:
                 )
             )
         return _card_node_ids_for_payload(card.title, node_by_name) or [node.id for node in node_by_name.values()]
+
+    def _pause_requested(self, run) -> bool:
+        if not run_pause_registry.is_pause_requested(run.id, run.created_at):
+            return False
+        self.repository.update_run_status(
+            run,
+            "paused",
+            completed_at=datetime.now(timezone.utc),
+            error_summary="采集已暂停，已保留当前已完成的来源和卡片。",
+        )
+        run_pause_registry.clear(run.id)
+        return True
 
 
 def _source_ids_from_indexes(sources, indexes: list[int]) -> list[int]:

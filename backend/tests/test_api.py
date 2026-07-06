@@ -252,6 +252,20 @@ def test_collect_run_uses_seeded_default_sources(client: TestClient, monkeypatch
     assert any(source["url"] == "https://github.com/example/rag" for source in sources)
 
 
+def test_pause_run_collection_endpoint_marks_running_run_paused(client: TestClient):
+    run_response = client.post("/runs", json={"keyword": "RAG", "mode": "light"})
+    run_id = run_response.json()["id"]
+
+    pause_response = client.post(f"/runs/{run_id}/pause")
+
+    assert pause_response.status_code == 200
+    payload = pause_response.json()
+    assert payload["status"] == "paused"
+    assert payload["error_summary"] == "采集已暂停，已保留当前已完成的来源和卡片。"
+    missing_response = client.post("/runs/999999/pause")
+    assert missing_response.status_code == 404
+
+
 def test_collect_run_reads_article_candidates_not_search_pages(client: TestClient, monkeypatch):
     original_client = httpx.Client
 

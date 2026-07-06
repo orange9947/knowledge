@@ -352,6 +352,13 @@ h3 {
   box-shadow: 0 12px 24px rgba(67, 111, 147, 0.22);
 }
 
+.pause-run-button {
+  border: 1px solid rgba(151, 82, 42, 0.24);
+  color: #fff7ed;
+  background: #97522a;
+  box-shadow: 0 12px 24px rgba(151, 82, 42, 0.22);
+}
+
 .primary-button {
   min-height: 40px;
   padding: 0 14px;
@@ -372,6 +379,14 @@ h3 {
 .icon-action:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled,
+.mode-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.66;
 }
 
 .dashboard-grid {

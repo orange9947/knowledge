@@ -7,7 +7,7 @@ from app.pydantic_compat import OrmBaseModel
 
 
 RunMode = Literal["light", "standard", "deep"]
-RunStatus = Literal["pending", "running", "completed", "partial", "failed"]
+RunStatus = Literal["pending", "running", "completed", "partial", "failed", "paused"]
 SourceStatus = Literal["pending", "success", "partial", "failed", "skipped"]
 
 

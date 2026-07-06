@@ -1138,4 +1138,137 @@ describe("App", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
   });
+
+  it("locks knowledge base switching while collection is running and can request pause", async () => {
+    const user = userEvent.setup();
+    let resolveCollect: (value: unknown) => void = () => {};
+    const collectPromise = new Promise((resolve) => {
+      resolveCollect = resolve;
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            app_name: "AI 学习知识图谱",
+            version: "0.1.0",
+            database: "ready",
+          }),
+        });
+      }
+      if (url.endsWith("/settings/model")) return Promise.resolve({ ok: true, json: async () => null });
+      if (url.endsWith("/settings/sources")) return Promise.resolve({ ok: true, json: async () => [] });
+      if (url.endsWith("/knowledge-bases")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: 1,
+              name: "默认知识库",
+              description: "默认知识库",
+              learning_prompt: null,
+              created_at: "2026-07-04T00:00:00Z",
+              updated_at: "2026-07-04T00:00:00Z",
+            },
+            {
+              id: 2,
+              name: "第二知识库",
+              description: "第二知识库",
+              learning_prompt: null,
+              created_at: "2026-07-04T00:00:00Z",
+              updated_at: "2026-07-04T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/knowledge/graph?knowledge_base_id=1") || url.endsWith("/knowledge/graph")) {
+        return Promise.resolve({ ok: true, json: async () => ({ nodes: [], edges: [] }) });
+      }
+      if (url.endsWith("/runs?knowledge_base_id=1")) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      if (url.endsWith("/runs") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 11,
+            knowledge_base_id: 1,
+            keyword: "AI 智能体",
+            mode: "light",
+            status: "pending",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: null,
+            language_policy: "zh-en-to-zh",
+            source_count: 0,
+            token_usage_estimate: null,
+            error_summary: null,
+            is_pinned: false,
+            learning_prompt: null,
+          }),
+        });
+      }
+      if (url.endsWith("/runs/11/collect") && init?.method === "POST") {
+        return collectPromise;
+      }
+      if (url.endsWith("/runs/11/pause") && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 11,
+            knowledge_base_id: 1,
+            keyword: "AI 智能体",
+            mode: "light",
+            status: "paused",
+            created_at: "2026-07-04T00:00:00Z",
+            completed_at: "2026-07-04T00:00:00Z",
+            language_policy: "zh-en-to-zh",
+            source_count: 1,
+            token_usage_estimate: null,
+            error_summary: "采集已暂停，已保留当前已完成的来源和卡片。",
+            is_pinned: false,
+            learning_prompt: null,
+          }),
+        });
+      }
+      if (url.endsWith("/runs/11/sources")) return Promise.resolve({ ok: true, json: async () => [] });
+      if (url.endsWith("/runs/11/cards")) return Promise.resolve({ ok: true, json: async () => [] });
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await screen.findByText("API 0.1.0");
+
+    await user.click(screen.getByRole("button", { name: "运行" }));
+    expect(await screen.findByRole("button", { name: "暂停采集" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "知识库" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "暂停采集" }));
+    expect(await screen.findByText("任务 #11 已暂停，已保留当前采集结果")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/runs/11/pause", expect.objectContaining({ method: "POST" }));
+
+    resolveCollect({
+      ok: true,
+      json: async () => ({
+        id: 11,
+        knowledge_base_id: 1,
+        keyword: "AI 智能体",
+        mode: "light",
+        status: "paused",
+        created_at: "2026-07-04T00:00:00Z",
+        completed_at: "2026-07-04T00:00:00Z",
+        language_policy: "zh-en-to-zh",
+        source_count: 1,
+        token_usage_estimate: null,
+        error_summary: "采集已暂停，已保留当前已完成的来源和卡片。",
+        is_pinned: false,
+        learning_prompt: null,
+      }),
+    });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "暂停采集" })).not.toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "知识库" })).not.toBeDisabled();
+  });
 });

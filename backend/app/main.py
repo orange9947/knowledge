@@ -242,6 +242,14 @@ def collect_run_sources(run_id: int, session: Session = Depends(get_session)):
     return run
 
 
+@app.post("/runs/{run_id}/pause", response_model=LearningRunRead)
+def pause_run_collection(run_id: int, session: Session = Depends(get_session)):
+    run = LearningRunService(session).pause_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
+    return run
+
+
 @app.post("/runs/{run_id}/ai-collect", response_model=LearningRunRead)
 def ai_collect_run_sources(run_id: int, session: Session = Depends(get_session)):
     try:
