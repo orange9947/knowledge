@@ -68,6 +68,7 @@ import {
   type KnowledgeBase,
   type KnowledgeExport,
   type KnowledgeNode,
+  type KnowledgeNodeDetail,
   type KnowledgeNodeInput,
   type KnowledgeNodeUpdate,
   type LearningCard,
@@ -401,7 +402,7 @@ function App() {
   const [runSources, setRunSources] = useState<SourceRecord[]>([]);
   const [cards, setCards] = useState<LearningCard[]>([]);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
-  const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
+  const [selectedNode, setSelectedNode] = useState<KnowledgeNodeDetail | null>(null);
   const [nodeForm, setNodeForm] = useState<NodeFormState>(emptyNodeForm);
   const [isEditingNode, setIsEditingNode] = useState(false);
   const [selectedRun, setSelectedRun] = useState<LearningRun | null>(null);
@@ -580,7 +581,7 @@ function App() {
   function syncSelectedNodeFromGraph(graphData: GraphData) {
     if (!selectedNode) return;
     const refreshedNode = graphData.nodes.find((node) => node.id === selectedNode.id) ?? null;
-    setSelectedNode(refreshedNode);
+    setSelectedNode(refreshedNode ? { ...selectedNode, ...refreshedNode } : null);
     setNodeForm(refreshedNode ? nodeToForm(refreshedNode) : emptyNodeForm);
     if (!refreshedNode) setIsEditingNode(false);
   }
@@ -965,7 +966,7 @@ function App() {
       const graphData = await fetchGraph(activeKnowledgeBaseId);
       const refreshedNode = graphData.nodes.find((node) => node.id === saved.id) ?? saved;
       setGraph(graphData);
-      setSelectedNode(refreshedNode);
+      setSelectedNode(toNodeDetail(refreshedNode));
       setNodeForm(nodeToForm(refreshedNode));
       setIsEditingNode(false);
       setMessage(editingNode ? `已更新关键点：${saved.name}` : `已创建关键点：${saved.name}`);
@@ -1309,6 +1310,8 @@ function App() {
               onDeleteNode={handleDeleteNode}
               onEditNode={handleEditNode}
               onNodeFormChange={handleNodeFormChange}
+              onOpenCard={(card) => setExpandedLearningItem({ kind: "card", item: card })}
+              onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
               onResetOverview={handleResetGraphOverview}
               onSaveNode={handleSaveNode}
               onSelectNode={handleSelectNode}
@@ -1858,6 +1861,8 @@ function GraphPanel({
   onDeleteNode,
   onEditNode,
   onNodeFormChange,
+  onOpenCard,
+  onOpenSource,
   onResetOverview,
   onSaveNode,
   onSelectNode,
@@ -1887,6 +1892,8 @@ function GraphPanel({
   onDeleteNode: () => void;
   onEditNode: () => void;
   onNodeFormChange: (patch: Partial<NodeFormState>) => void;
+  onOpenCard: (card: LearningCard) => void;
+  onOpenSource: (source: SourceRecord) => void;
   onResetOverview: () => void;
   onSaveNode: () => void;
   onSelectNode: (nodeId: number) => void;
@@ -1897,7 +1904,7 @@ function GraphPanel({
   onStartNewNode: () => void;
   onToggleAssistantCandidate: (cardId: number, selected: boolean) => void;
   overviewSignal: number;
-  selectedNode: KnowledgeNode | null;
+  selectedNode: KnowledgeNodeDetail | null;
 }) {
   const [viewMode, setViewMode] = useState<GraphViewMode>("explore");
   const [graphQuery, setGraphQuery] = useState("");
@@ -2072,6 +2079,12 @@ function GraphPanel({
                   ? <span>暂无标签</span>
                   : selectedNode.tags.map((tag) => <span key={tag}>{tagLabel(tag)}</span>)}
               </div>
+              <NodeEvidenceList
+                cards={selectedNode.cards}
+                onOpenCard={onOpenCard}
+                onOpenSource={onOpenSource}
+                sources={selectedNode.sources}
+              />
             </>
           ) : (
             <div className="node-empty-detail">
@@ -2307,6 +2320,54 @@ function G6GraphCanvas({
   }, [fitGraphToCenter, overviewSignal]);
 
   return <div className={viewMode === "explore" ? "g6-canvas vault-graph" : "g6-canvas"} ref={containerRef} />;
+}
+
+function NodeEvidenceList({
+  cards,
+  onOpenCard,
+  onOpenSource,
+  sources,
+}: {
+  cards: LearningCard[];
+  onOpenCard: (card: LearningCard) => void;
+  onOpenSource: (source: SourceRecord) => void;
+  sources: SourceRecord[];
+}) {
+  const sourceById = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
+
+  return (
+    <div className="node-evidence">
+      <div className="node-evidence-heading">
+        <strong>关联卡片</strong>
+        <span>{cards.length} 张</span>
+      </div>
+      {cards.length === 0 ? (
+        <p className="empty-state compact">暂无关联卡片。</p>
+      ) : (
+        cards.map((card) => (
+          <article className="node-evidence-card" key={card.id}>
+            <button type="button" onClick={() => onOpenCard(card)}>
+              <strong>{card.title}</strong>
+              <span>{card.summary}</span>
+              {card.details ? <small>{card.details}</small> : null}
+            </button>
+            {card.source_ids.length > 0 ? (
+              <div className="node-evidence-sources">
+                {card.source_ids.map((sourceId) => {
+                  const source = sourceById.get(sourceId);
+                  return source ? (
+                    <button key={source.id} type="button" onClick={() => onOpenSource(source)}>
+                      {source.title || source.site || source.url}
+                    </button>
+                  ) : null;
+                })}
+              </div>
+            ) : null}
+          </article>
+        ))
+      )}
+    </div>
+  );
 }
 
 function prefersTouchGraphControls() {
@@ -3172,6 +3233,14 @@ function nodeToForm(node: KnowledgeNode): NodeFormState {
     summary: node.summary ?? "",
     aliasesText: node.aliases.join("，"),
     tagsText: node.tags.join("，"),
+  };
+}
+
+function toNodeDetail(node: KnowledgeNode): KnowledgeNodeDetail {
+  return {
+    ...node,
+    cards: "cards" in node ? (node as KnowledgeNodeDetail).cards : [],
+    sources: "sources" in node ? (node as KnowledgeNodeDetail).sources : [],
   };
 }
 

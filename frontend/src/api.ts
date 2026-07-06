@@ -65,6 +65,11 @@ export type KnowledgeNode = {
   tags: string[];
 };
 
+export type KnowledgeNodeDetail = KnowledgeNode & {
+  cards: LearningCard[];
+  sources: SourceRecord[];
+};
+
 export type KnowledgeNodeInput = {
   knowledge_base_id: number;
   type: string;
@@ -390,8 +395,8 @@ export async function fetchGraph(knowledgeBaseId?: number | null): Promise<Graph
   return request<GraphData>(withKnowledgeBase("/knowledge/graph", knowledgeBaseId));
 }
 
-export async function fetchKnowledgeNode(nodeId: number, knowledgeBaseId?: number | null): Promise<KnowledgeNode> {
-  return request<KnowledgeNode>(withKnowledgeBase(`/knowledge/nodes/${nodeId}`, knowledgeBaseId));
+export async function fetchKnowledgeNode(nodeId: number, knowledgeBaseId?: number | null): Promise<KnowledgeNodeDetail> {
+  return request<KnowledgeNodeDetail>(withKnowledgeBase(`/knowledge/nodes/${nodeId}`, knowledgeBaseId));
 }
 
 export async function createKnowledgeNode(payload: KnowledgeNodeInput): Promise<KnowledgeNode> {

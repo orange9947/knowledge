@@ -277,6 +277,11 @@ class KnowledgeNodeRead(OrmBaseModel):
     tags: list[str]
 
 
+class KnowledgeNodeDetailRead(KnowledgeNodeRead):
+    cards: list[CardRead] = Field(default_factory=list)
+    sources: list[SourceRead] = Field(default_factory=list)
+
+
 class KnowledgeEdgeRead(OrmBaseModel):
     id: int
     knowledge_base_id: int = 1

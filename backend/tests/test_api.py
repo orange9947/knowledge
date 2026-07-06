@@ -384,6 +384,15 @@ def test_cards_and_graph_endpoints(client: TestClient):
     assert [card["approval_status"] for card in approved_cards].count("approved") == 2
     approved_graph = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
     assert len(approved_graph["nodes"]) >= 2
+    approved_card_lookup = {card["id"]: card for card in client.get(f"/runs/{run_id}/cards").json()}
+    linked_card = next(card for card in approved_card_lookup.values() if card["id"] == cards[0]["id"])
+    node_id = linked_card["node_ids"][0]
+    node_detail_response = client.get(f"/knowledge/nodes/{node_id}?knowledge_base_id={knowledge_base_id}")
+    assert node_detail_response.status_code == 200
+    node_detail = node_detail_response.json()
+    assert node_detail["cards"]
+    assert any(card["id"] == cards[0]["id"] and card["summary"] == cards[0]["summary"] for card in node_detail["cards"])
+    assert "sources" in node_detail
     duplicate_approve_response = client.post(
         f"/runs/{run_id}/cards/approve",
         json={"card_ids": [cards[0]["id"], cards[-1]["id"]]},
@@ -433,6 +442,9 @@ def test_run_detail_status_and_knowledge_search(client: TestClient):
     node_response = client.get(f"/knowledge/nodes/{node_id}?knowledge_base_id={knowledge_base_id}")
     wrong_base_response = client.get(f"/knowledge/nodes/{node_id}?knowledge_base_id=1")
     assert node_response.status_code == 200
+    node_detail = node_response.json()
+    assert "cards" in node_detail
+    assert any(card["details"] for card in node_detail["cards"])
     assert wrong_base_response.status_code == 404
 
 

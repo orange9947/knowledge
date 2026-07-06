@@ -345,6 +345,20 @@ class KnowledgeRepository:
         statement = select(models.Card).where(models.Card.run_id == run_id).order_by(models.Card.sort_order.asc())
         return list(self.session.scalars(statement))
 
+    def list_cards_for_node(self, node_id: int, knowledge_base_id: int | None = None) -> list[models.Card]:
+        statement = select(models.Card).join(models.LearningRun)
+        if knowledge_base_id is not None:
+            statement = statement.where(models.LearningRun.knowledge_base_id == knowledge_base_id)
+        statement = statement.order_by(models.LearningRun.created_at.desc(), models.Card.sort_order.asc())
+        return [card for card in self.session.scalars(statement) if node_id in (card.node_ids or [])]
+
+    def list_sources_by_ids(self, source_ids: Iterable[int]) -> list[models.Source]:
+        ids = set(source_ids)
+        if not ids:
+            return []
+        statement = select(models.Source).where(models.Source.id.in_(ids)).order_by(models.Source.id.asc())
+        return list(self.session.scalars(statement))
+
     def delete_cards_for_run_by_types(
         self,
         run_id: int,

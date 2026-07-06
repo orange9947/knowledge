@@ -720,13 +720,52 @@ describe("App", () => {
       if (url.includes("/knowledge/nodes/1")) {
         return Promise.resolve({
           ok: true,
-          json: async () => graphNodes.find((node) => node.id === 1),
+          json: async () => ({
+            ...graphNodes.find((node) => node.id === 1),
+            cards: [
+              {
+                id: 71,
+                run_id: 7,
+                type: "summary",
+                title: "RAG 本次总结",
+                summary: "新增重排序知识",
+                details: "已过滤重复内容",
+                source_ids: [1],
+                node_ids: [1],
+                sort_order: 0,
+                approval_status: "approved",
+                candidate_payload: null,
+              },
+            ],
+            sources: [
+              {
+                id: 1,
+                run_id: 7,
+                url: "https://github.com/search?q=RAG",
+                title: "RAG repositories",
+                site: "github.com",
+                language: "en",
+                published_at: null,
+                status: "success",
+                status_reason: null,
+                snippet: null,
+                extracted_text: "RAG material",
+                content_hash: "hash",
+                quality_score: 1,
+                is_pinned: false,
+              },
+            ],
+          }),
         });
       }
       if (url.includes("/knowledge/nodes/2")) {
         return Promise.resolve({
           ok: true,
-          json: async () => graphNodes.find((node) => node.id === 2),
+          json: async () => ({
+            ...graphNodes.find((node) => node.id === 2),
+            cards: [],
+            sources: [],
+          }),
         });
       }
       if (url.endsWith("/runs/7")) {
@@ -1033,6 +1072,14 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "RAG" }));
     expect(await screen.findByText("Retrieval augmented generation")).toBeInTheDocument();
     expect(screen.getByText("相关关系")).toBeInTheDocument();
+    expect(screen.getByText("关联卡片")).toBeInTheDocument();
+    const nodeCardButton = screen.getByRole("button", { name: /RAG 本次总结/ });
+    expect(nodeCardButton).toHaveTextContent("已过滤重复内容");
+    expect(screen.getByRole("button", { name: "RAG repositories" })).toBeInTheDocument();
+    await user.click(nodeCardButton);
+    const nodeCardDialog = screen.getByRole("dialog", { name: "知识卡片详情" });
+    expect(within(nodeCardDialog).getByText("已过滤重复内容")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭详情" }));
     await user.type(screen.getByRole("textbox", { name: "搜索图谱节点" }), "检索");
     await user.selectOptions(screen.getByLabelText("节点类型筛选"), "concept");
     await user.click(screen.getByRole("button", { name: "返回概览" }));

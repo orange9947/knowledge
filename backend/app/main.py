@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_session, init_db
 from app.portable import export_knowledge, import_knowledge
+from app.pydantic_compat import model_dump, model_validate
 from app.repositories import KnowledgeRepository
 from app.schemas import (
     AssistantQueryRequest,
@@ -22,6 +23,7 @@ from app.schemas import (
     KnowledgeBaseUpdate,
     KnowledgeExport,
     KnowledgeNodeCreate,
+    KnowledgeNodeDetailRead,
     KnowledgeNodeRead,
     KnowledgeNodeUpdate,
     LearningRunCreate,
@@ -383,7 +385,7 @@ def create_knowledge_node(payload: KnowledgeNodeCreate, session: Session = Depen
     return repository.create_node(payload)
 
 
-@app.get("/knowledge/nodes/{node_id}", response_model=KnowledgeNodeRead)
+@app.get("/knowledge/nodes/{node_id}", response_model=KnowledgeNodeDetailRead)
 def get_knowledge_node(
     node_id: int,
     knowledge_base_id: int | None = None,
@@ -395,7 +397,11 @@ def get_knowledge_node(
         raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
     if knowledge_base_id is not None and node.knowledge_base_id != knowledge_base_id:
         raise HTTPException(status_code=404, detail=NODE_NOT_FOUND)
-    return node
+    cards = repository.list_cards_for_node(node.id, node.knowledge_base_id)
+    source_ids = {source_id for card in cards for source_id in (card.source_ids or [])}
+    sources = repository.list_sources_by_ids(source_ids)
+    node_payload = model_dump(model_validate(KnowledgeNodeRead, node))
+    return KnowledgeNodeDetailRead(**node_payload, cards=cards, sources=sources)
 
 
 @app.patch("/knowledge/nodes/{node_id}", response_model=KnowledgeNodeRead)
