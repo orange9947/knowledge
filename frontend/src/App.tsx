@@ -83,6 +83,8 @@ import { getApiBaseUrl, getRuntimeName } from "./platform";
 
 const ANDROID_API_BOOT_ATTEMPTS = 16;
 const ANDROID_API_BOOT_DELAY_MS = 500;
+const GRAPH_MIN_ZOOM = 0.22;
+const GRAPH_MAX_ZOOM = 1.8;
 
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
@@ -2105,6 +2107,9 @@ function G6GraphCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<Graph | null>(null);
   const renderedRef = useRef(false);
+  const fitGraphToCenter = useCallback((duration = renderedRef.current ? 280 : 0) => {
+    void graphRef.current?.fitView({ when: "always", direction: "both" }, { duration });
+  }, []);
   const data = useMemo(() => ({
     nodes: nodes.map((node) => ({
       id: String(node.id),
@@ -2199,8 +2204,8 @@ function G6GraphCanvas({
       },
       behaviors: [
         "drag-canvas",
-        { type: "zoom-canvas", key: "zoom-wheel" },
-        { type: "zoom-canvas", key: "zoom-pinch", trigger: ["pinch"] },
+        { type: "zoom-canvas", key: "zoom-wheel", maxZoom: GRAPH_MAX_ZOOM, minZoom: GRAPH_MIN_ZOOM },
+        { type: "zoom-canvas", key: "zoom-pinch", maxZoom: GRAPH_MAX_ZOOM, minZoom: GRAPH_MIN_ZOOM, trigger: ["pinch"] },
         "drag-element",
       ],
     } as unknown as ConstructorParameters<typeof Graph>[0];
@@ -2210,6 +2215,7 @@ function G6GraphCanvas({
         const nodeId = Number(readGraphTargetId((event as { target?: unknown }).target));
         if (Number.isFinite(nodeId)) onSelectNode(nodeId);
       });
+      graphRef.current.on("canvas:dblclick", () => fitGraphToCenter(260));
     } else {
       graphRef.current.setOptions(options);
     }
@@ -2223,14 +2229,14 @@ function G6GraphCanvas({
       graphRef.current = null;
       renderedRef.current = false;
     };
-  }, [data, nodes, onSelectNode, selectedNodeId, viewMode]);
+  }, [data, fitGraphToCenter, nodes, onSelectNode, selectedNodeId, viewMode]);
 
   useEffect(() => {
     if (overviewSignal === 0 || !graphRef.current) return;
     window.setTimeout(() => {
-      void graphRef.current?.fitView({ when: "always", direction: "both" }, { duration: renderedRef.current ? 280 : 0 });
+      fitGraphToCenter();
     }, 60);
-  }, [overviewSignal]);
+  }, [fitGraphToCenter, overviewSignal]);
 
   return <div className={viewMode === "explore" ? "g6-canvas vault-graph" : "g6-canvas"} ref={containerRef} />;
 }

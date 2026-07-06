@@ -6,6 +6,7 @@ vi.mock("@antv/g6", () => {
   class MockGraph {
     static instances: MockGraph[] = [];
     fitView = vi.fn(() => Promise.resolve());
+    handlers: Record<string, Array<() => void>> = {};
     optionHistory: unknown[] = [];
     options: unknown;
 
@@ -15,7 +16,9 @@ vi.mock("@antv/g6", () => {
       MockGraph.instances.push(this);
     }
     destroy() {}
-    on() {}
+    on(eventName: string, handler: () => void) {
+      this.handlers[eventName] = [...(this.handlers[eventName] ?? []), handler];
+    }
     render() {
       return Promise.resolve();
     }
@@ -975,7 +978,8 @@ describe("App", () => {
       const latestOptions = latestInstance.optionHistory[latestInstance.optionHistory.length - 1] as { behaviors?: unknown[] };
       expect(latestOptions.behaviors).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ key: "zoom-pinch", trigger: ["pinch"], type: "zoom-canvas" }),
+          expect.objectContaining({ key: "zoom-wheel", maxZoom: 1.8, minZoom: 0.22, type: "zoom-canvas" }),
+          expect.objectContaining({ key: "zoom-pinch", maxZoom: 1.8, minZoom: 0.22, trigger: ["pinch"], type: "zoom-canvas" }),
         ]),
       );
     });
@@ -991,9 +995,14 @@ describe("App", () => {
     expect(screen.getByLabelText("关系深度")).toHaveValue("2");
     expect(screen.queryByText("Retrieval augmented generation")).not.toBeInTheDocument();
     await waitFor(() => {
-      const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn> }> }).instances;
+      const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn>; handlers: Record<string, Array<() => void>> }> }).instances;
       expect(graphInstances.some((instance) => instance.fitView.mock.calls.length > 0)).toBe(true);
     });
+    const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn>; handlers: Record<string, Array<() => void>> }> }).instances;
+    const latestInstance = graphInstances[graphInstances.length - 1];
+    const previousFitCount = latestInstance.fitView.mock.calls.length;
+    latestInstance.handlers["canvas:dblclick"]?.[0]?.();
+    expect(latestInstance.fitView.mock.calls.length).toBe(previousFitCount + 1);
     await user.click(screen.getByRole("button", { name: "AI 助手" }));
     await user.type(screen.getByLabelText("AI 助手问题"), "我下一步应该学什么？");
     await user.click(screen.getByRole("button", { name: "提问" }));
