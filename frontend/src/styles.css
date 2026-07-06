@@ -615,11 +615,24 @@ textarea:disabled,
 }
 
 .learning-card {
+  min-width: 0;
   min-height: 104px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
+}
+
+.learning-card,
+.learning-card *,
+.keyword-hint,
+.keyword-hint *,
+.detail-modal-card,
+.detail-modal-card *,
+.source-open-button,
+.source-open-button * {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .learning-card.candidate {
@@ -735,6 +748,13 @@ textarea:disabled,
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.learning-card h3,
+.keyword-hint strong,
+.detail-modal-header h3 {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .graph-panel {
@@ -1891,12 +1911,17 @@ textarea:disabled,
 .source-open-button span {
   min-width: 0;
   overflow: hidden;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .extracted-row strong {
   color: var(--ink);
-  white-space: nowrap;
+  display: -webkit-box;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .source-open-button span {
@@ -1912,7 +1937,7 @@ textarea:disabled,
   color: var(--muted);
   font-size: 0.86rem;
   text-decoration: none;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .extract-status {
