@@ -9,6 +9,7 @@ vi.mock("@antv/g6", () => {
     handlers: Record<string, Array<() => void>> = {};
     optionHistory: unknown[] = [];
     options: unknown;
+    setElementState = vi.fn(() => Promise.resolve());
 
     constructor(options: unknown) {
       this.options = options;
@@ -48,11 +49,14 @@ type MockGraphNode = {
 describe("App", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 0 });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
     (MockedGraph as unknown as { instances: unknown[] }).instances = [];
   });
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     delete window.__AILKG_RUNTIME__;
   });
 
@@ -981,6 +985,7 @@ describe("App", () => {
         expect.arrayContaining([
           expect.objectContaining({ key: "zoom-wheel", type: "zoom-canvas" }),
           expect.objectContaining({ key: "zoom-pinch", trigger: ["pinch"], type: "zoom-canvas" }),
+          "drag-element",
         ]),
       );
     });
@@ -996,14 +1001,15 @@ describe("App", () => {
     expect(screen.getByLabelText("关系深度")).toHaveValue("2");
     expect(screen.queryByText("Retrieval augmented generation")).not.toBeInTheDocument();
     await waitFor(() => {
-      const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn>; handlers: Record<string, Array<() => void>> }> }).instances;
+      const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn>; handlers: Record<string, Array<() => void>>; setElementState: ReturnType<typeof vi.fn> }> }).instances;
       expect(graphInstances.some((instance) => instance.fitView.mock.calls.length > 0)).toBe(true);
     });
-    const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn>; handlers: Record<string, Array<() => void>> }> }).instances;
+    const graphInstances = (MockedGraph as unknown as { instances: Array<{ fitView: ReturnType<typeof vi.fn>; handlers: Record<string, Array<() => void>>; setElementState: ReturnType<typeof vi.fn> }> }).instances;
     const latestInstance = graphInstances[graphInstances.length - 1];
     const previousFitCount = latestInstance.fitView.mock.calls.length;
     latestInstance.handlers["canvas:dblclick"]?.[0]?.();
     expect(latestInstance.fitView.mock.calls.length).toBe(previousFitCount + 1);
+    expect(latestInstance.setElementState).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "AI 助手" }));
     await user.type(screen.getByLabelText("AI 助手问题"), "我下一步应该学什么？");
     await user.click(screen.getByRole("button", { name: "提问" }));
@@ -1147,6 +1153,98 @@ describe("App", () => {
       "/api/knowledge/nodes/3?knowledge_base_id=1",
       expect.objectContaining({ method: "DELETE" }),
     );
+  });
+
+  it("keeps mobile graph pinch gestures from dragging nodes", async () => {
+    Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 2 });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            app_name: "AI 学习知识图谱",
+            version: "0.1.0",
+            database: "ready",
+          }),
+        });
+      }
+      if (url.endsWith("/settings/model")) return Promise.resolve({ ok: true, json: async () => null });
+      if (url.endsWith("/knowledge-bases")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: 1,
+              name: "默认知识库",
+              description: "默认知识库",
+              learning_prompt: "我是初学者",
+              created_at: "2026-07-04T00:00:00Z",
+              updated_at: "2026-07-04T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/knowledge/graph")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            nodes: [
+              {
+                aliases: [],
+                id: 1,
+                knowledge_base_id: 1,
+                name: "RAG",
+                normalized_name: "rag",
+                summary: "Retrieval augmented generation",
+                tags: [],
+                type: "concept",
+              },
+              {
+                aliases: [],
+                id: 2,
+                knowledge_base_id: 1,
+                name: "重排序",
+                normalized_name: "重排序",
+                summary: "Rerank results",
+                tags: [],
+                type: "skill",
+              },
+            ],
+            edges: [{ id: 1, source_node_id: 1, target_node_id: 2, type: "related_to" }],
+          }),
+        });
+      }
+      if (
+        url.endsWith("/settings/sources") ||
+        url.includes("/runs") ||
+        url.endsWith("/sources") ||
+        url.endsWith("/cards")
+      ) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await screen.findByText("API 0.1.0");
+    await userEvent.click(screen.getByRole("button", { name: "图谱" }));
+
+    await waitFor(() => {
+      const graphInstances = (MockedGraph as unknown as { instances: Array<{ optionHistory: unknown[] }> }).instances;
+      expect(graphInstances.length).toBeGreaterThan(0);
+      const latestInstance = graphInstances[graphInstances.length - 1];
+      const latestOptions = latestInstance.optionHistory[latestInstance.optionHistory.length - 1] as { behaviors?: unknown[] };
+      expect(latestOptions.behaviors).toEqual(expect.not.arrayContaining(["drag-element"]));
+      expect(latestOptions.behaviors).toEqual(
+        expect.arrayContaining([
+          "drag-canvas",
+          expect.objectContaining({ key: "zoom-pinch", trigger: ["pinch"], type: "zoom-canvas" }),
+        ]),
+      );
+    });
   });
 
   it("locks knowledge base switching while collection is running and can request pause", async () => {

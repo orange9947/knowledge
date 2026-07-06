@@ -85,6 +85,7 @@ const ANDROID_API_BOOT_ATTEMPTS = 16;
 const ANDROID_API_BOOT_DELAY_MS = 500;
 const GRAPH_MIN_ZOOM = 0.22;
 const GRAPH_MAX_ZOOM = 1.8;
+const GRAPH_CLICK_GESTURE_GUARD_MS = 320;
 
 const modes = ["light", "standard", "deep"] as const;
 type ViewKey = "learn" | "graph" | "history" | "settings";
@@ -2107,9 +2108,22 @@ function G6GraphCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<Graph | null>(null);
   const renderedRef = useRef(false);
+  const renderSequenceRef = useRef(0);
+  const lastViewportGestureAtRef = useRef(0);
+  const onSelectNodeRef = useRef(onSelectNode);
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  const nodesRef = useRef(nodes);
+  const touchGraphControls = useMemo(() => prefersTouchGraphControls(), []);
   const fitGraphToCenter = useCallback((duration = renderedRef.current ? 280 : 0) => {
     void graphRef.current?.fitView({ when: "always", direction: "both" }, { duration });
   }, []);
+  useEffect(() => {
+    onSelectNodeRef.current = onSelectNode;
+  }, [onSelectNode]);
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId;
+    nodesRef.current = nodes;
+  }, [nodes, selectedNodeId]);
   const data = useMemo(() => ({
     nodes: nodes.map((node) => ({
       id: String(node.id),
@@ -2121,7 +2135,6 @@ function G6GraphCanvas({
         muted: node.muted,
         layoutFocus: node.isLayoutFocus,
         priority: node.priority,
-        selected: node.id === selectedNodeId,
         weight: node.weight,
       },
     })),
@@ -2131,7 +2144,35 @@ function G6GraphCanvas({
       target: String(edge.target_node_id),
       data: { label: edge.type },
     })),
-  }), [edges, nodes, selectedNodeId]);
+  }), [edges, nodes]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const markViewportGesture = () => {
+      lastViewportGestureAtRef.current = Date.now();
+    };
+    container.addEventListener("touchmove", markViewportGesture, { passive: true });
+    container.addEventListener("wheel", markViewportGesture, { passive: true });
+    return () => {
+      container.removeEventListener("touchmove", markViewportGesture);
+      container.removeEventListener("wheel", markViewportGesture);
+    };
+  }, []);
+
+  useEffect(() => () => {
+    graphRef.current?.destroy();
+    graphRef.current = null;
+    renderedRef.current = false;
+  }, []);
+
+  const applySelectedNodeState = useCallback((graph = graphRef.current) => {
+    if (!graph) return;
+    const states = Object.fromEntries(
+      nodesRef.current.map((node) => [String(node.id), node.id === selectedNodeIdRef.current ? ["selected"] : []]),
+    );
+    void graph.setElementState(states, false);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -2164,32 +2205,38 @@ function G6GraphCanvas({
       node: {
         type: "circle",
         style: {
-          size: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; weight?: number } }) => {
-            if (datum.data?.selected) return exploreMode ? 58 : 48;
+          size: (datum: { data?: { layoutFocus?: boolean; weight?: number } }) => {
             if (exploreMode && datum.data?.layoutFocus) return 54;
             return exploreMode ? Math.min(48, 24 + (datum.data?.weight ?? 0) * 4) : 36;
           },
           fill: (datum: { data?: { type?: string } }) => nodeColor(datum.data?.type || "concept"),
           fillOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.22 : 0.96),
-          stroke: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; distance?: number | null } }) => {
-            if (datum.data?.selected) return exploreMode ? "#f7faf8" : "#121815";
+          stroke: (datum: { data?: { layoutFocus?: boolean; distance?: number | null } }) => {
             if (exploreMode && datum.data?.layoutFocus) return "#f7faf8";
             if (exploreMode && datum.data?.distance === 1) return "#dce9e3";
             return exploreMode ? "#26322e" : "#ffffff";
           },
           strokeOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.2 : 0.92),
-          lineWidth: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; distance?: number | null } }) => {
-            if (datum.data?.selected || datum.data?.layoutFocus) return 4;
+          lineWidth: (datum: { data?: { layoutFocus?: boolean; distance?: number | null } }) => {
+            if (datum.data?.layoutFocus) return 4;
             return exploreMode && datum.data?.distance === 1 ? 2.2 : 1.4;
           },
           labelText: (datum: { data?: { label?: string } }) => datum.data?.label || "",
           labelFill: exploreMode ? "#dbe9e2" : "#24312b",
           labelFillOpacity: (datum: { data?: { muted?: boolean } }) => (datum.data?.muted ? 0.28 : 0.96),
-          labelFontSize: (datum: { data?: { layoutFocus?: boolean; selected?: boolean; weight?: number } }) =>
-            datum.data?.selected || datum.data?.layoutFocus ? 14 : Math.min(12.5, 10.5 + (datum.data?.weight ?? 0) * 0.28),
+          labelFontSize: (datum: { data?: { layoutFocus?: boolean; weight?: number } }) =>
+            datum.data?.layoutFocus ? 14 : Math.min(12.5, 10.5 + (datum.data?.weight ?? 0) * 0.28),
           labelFontWeight: exploreMode ? 700 : 800,
           labelPlacement: "bottom",
           labelMaxWidth: exploreMode ? 140 : 120,
+        },
+        state: {
+          selected: {
+            labelFontSize: 14,
+            lineWidth: 4,
+            size: exploreMode ? 58 : 48,
+            stroke: exploreMode ? "#f7faf8" : "#121815",
+          },
         },
         palette: viewMode === "types" ? { type: "group", field: "group" } : undefined,
       },
@@ -2207,30 +2254,35 @@ function G6GraphCanvas({
         "drag-canvas",
         { type: "zoom-canvas", key: "zoom-wheel" },
         { type: "zoom-canvas", key: "zoom-pinch", trigger: ["pinch"] },
-        "drag-element",
+        ...(touchGraphControls ? [] : ["drag-element"]),
       ],
     } as unknown as ConstructorParameters<typeof Graph>[0];
     if (!graphRef.current) {
       graphRef.current = new Graph(options);
       graphRef.current.on("node:click", (event) => {
+        if (Date.now() - lastViewportGestureAtRef.current < GRAPH_CLICK_GESTURE_GUARD_MS) return;
         const nodeId = Number(readGraphTargetId((event as { target?: unknown }).target));
-        if (Number.isFinite(nodeId)) onSelectNode(nodeId);
+        if (Number.isFinite(nodeId)) onSelectNodeRef.current(nodeId);
       });
       graphRef.current.on("canvas:dblclick", () => fitGraphToCenter(260));
     } else {
       graphRef.current.setOptions(options);
     }
     renderedRef.current = false;
+    renderSequenceRef.current += 1;
+    const renderSequence = renderSequenceRef.current;
     const renderResult = graphRef.current.render();
     Promise.resolve(renderResult).finally(() => {
+      if (renderSequence !== renderSequenceRef.current) return;
       renderedRef.current = true;
+      applySelectedNodeState();
     });
-    return () => {
-      graphRef.current?.destroy();
-      graphRef.current = null;
-      renderedRef.current = false;
-    };
-  }, [data, fitGraphToCenter, nodes, onSelectNode, selectedNodeId, viewMode]);
+  }, [applySelectedNodeState, data, fitGraphToCenter, nodes, touchGraphControls, viewMode]);
+
+  useEffect(() => {
+    if (!renderedRef.current) return;
+    applySelectedNodeState();
+  }, [applySelectedNodeState]);
 
   useEffect(() => {
     if (overviewSignal === 0 || !graphRef.current) return;
@@ -2240,6 +2292,13 @@ function G6GraphCanvas({
   }, [fitGraphToCenter, overviewSignal]);
 
   return <div className={viewMode === "explore" ? "g6-canvas vault-graph" : "g6-canvas"} ref={containerRef} />;
+}
+
+function prefersTouchGraphControls() {
+  if (typeof window === "undefined") return false;
+  const coarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  const multiTouch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
+  return coarsePointer || multiTouch;
 }
 
 function AssistantDrawer({
