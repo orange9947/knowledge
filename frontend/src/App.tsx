@@ -907,7 +907,8 @@ function App() {
     setMessage("正在加载节点详情...");
     try {
       const node = await fetchKnowledgeNode(nodeId, activeKnowledgeBaseId);
-      setSelectedNode(node);
+      const nodeDetail = toNodeDetail(node);
+      setSelectedNode(nodeDetail);
       setNodeForm(nodeToForm(node));
       setIsEditingNode(false);
       setMessage(`已选择节点：${node.name}`);
@@ -3237,10 +3238,11 @@ function nodeToForm(node: KnowledgeNode): NodeFormState {
 }
 
 function toNodeDetail(node: KnowledgeNode): KnowledgeNodeDetail {
+  const detail = node as Partial<KnowledgeNodeDetail>;
   return {
     ...node,
-    cards: "cards" in node ? (node as KnowledgeNodeDetail).cards : [],
-    sources: "sources" in node ? (node as KnowledgeNodeDetail).sources : [],
+    cards: Array.isArray(detail.cards) ? detail.cards : [],
+    sources: Array.isArray(detail.sources) ? detail.sources : [],
   };
 }
 

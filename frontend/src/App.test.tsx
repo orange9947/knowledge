@@ -761,11 +761,7 @@ describe("App", () => {
       if (url.includes("/knowledge/nodes/2")) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            ...graphNodes.find((node) => node.id === 2),
-            cards: [],
-            sources: [],
-          }),
+          json: async () => graphNodes.find((node) => node.id === 2),
         });
       }
       if (url.endsWith("/runs/7")) {
@@ -1080,6 +1076,9 @@ describe("App", () => {
     const nodeCardDialog = screen.getByRole("dialog", { name: "知识卡片详情" });
     expect(within(nodeCardDialog).getByText("已过滤重复内容")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "关闭详情" }));
+    await user.click(screen.getByRole("button", { name: "检索增强" }));
+    expect(await screen.findByText("结合检索和生成")).toBeInTheDocument();
+    expect(screen.getByText("暂无关联卡片。")).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "搜索图谱节点" }), "检索");
     await user.selectOptions(screen.getByLabelText("节点类型筛选"), "concept");
     await user.click(screen.getByRole("button", { name: "返回概览" }));

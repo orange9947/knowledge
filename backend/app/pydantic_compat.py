@@ -36,6 +36,8 @@ def model_dump_json(instance: BaseModel) -> str:
 def model_validate(model: type[ModelT], payload: Any) -> ModelT:
     if hasattr(model, "model_validate"):
         return model.model_validate(payload)
+    if hasattr(model, "from_orm") and not isinstance(payload, dict):
+        return model.from_orm(payload)
     return model.parse_obj(payload)
 
 
