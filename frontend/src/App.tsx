@@ -2160,6 +2160,7 @@ function G6GraphCanvas({
       autoFit: "view" as const,
       data,
       layout,
+      zoomRange: [GRAPH_MIN_ZOOM, GRAPH_MAX_ZOOM] as [number, number],
       node: {
         type: "circle",
         style: {
@@ -2204,8 +2205,8 @@ function G6GraphCanvas({
       },
       behaviors: [
         "drag-canvas",
-        { type: "zoom-canvas", key: "zoom-wheel", maxZoom: GRAPH_MAX_ZOOM, minZoom: GRAPH_MIN_ZOOM },
-        { type: "zoom-canvas", key: "zoom-pinch", maxZoom: GRAPH_MAX_ZOOM, minZoom: GRAPH_MIN_ZOOM, trigger: ["pinch"] },
+        { type: "zoom-canvas", key: "zoom-wheel" },
+        { type: "zoom-canvas", key: "zoom-pinch", trigger: ["pinch"] },
         "drag-element",
       ],
     } as unknown as ConstructorParameters<typeof Graph>[0];

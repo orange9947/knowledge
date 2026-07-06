@@ -975,11 +975,12 @@ describe("App", () => {
       const graphInstances = (MockedGraph as unknown as { instances: Array<{ optionHistory: unknown[]; fitView: ReturnType<typeof vi.fn> }> }).instances;
       expect(graphInstances.length).toBeGreaterThan(0);
       const latestInstance = graphInstances[graphInstances.length - 1];
-      const latestOptions = latestInstance.optionHistory[latestInstance.optionHistory.length - 1] as { behaviors?: unknown[] };
+      const latestOptions = latestInstance.optionHistory[latestInstance.optionHistory.length - 1] as { behaviors?: unknown[]; zoomRange?: [number, number] };
+      expect(latestOptions.zoomRange).toEqual([0.22, 1.8]);
       expect(latestOptions.behaviors).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ key: "zoom-wheel", maxZoom: 1.8, minZoom: 0.22, type: "zoom-canvas" }),
-          expect.objectContaining({ key: "zoom-pinch", maxZoom: 1.8, minZoom: 0.22, trigger: ["pinch"], type: "zoom-canvas" }),
+          expect.objectContaining({ key: "zoom-wheel", type: "zoom-canvas" }),
+          expect.objectContaining({ key: "zoom-pinch", trigger: ["pinch"], type: "zoom-canvas" }),
         ]),
       );
     });
