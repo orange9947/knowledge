@@ -1126,8 +1126,10 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "运行记录" })).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "筛选历史记录" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
-    expect(await screen.findByText("RAG repositories")).toBeInTheDocument();
-    expect(screen.getByLabelText("历史知识卡片")).toBeInTheDocument();
+    expect(await screen.findByText("已打开任务 #7：RAG")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "知识提炼" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "文章素材" })).toBeInTheDocument();
+    expect(screen.getByText("RAG repositories")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /RAG 本次总结/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /RAG 本次总结/ }));
     expect(screen.getByRole("dialog", { name: "知识卡片详情" })).toBeInTheDocument();

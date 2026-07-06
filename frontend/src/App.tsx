@@ -1089,7 +1089,9 @@ function App() {
       setCards(detail.cards);
       setSelectedCardIds([]);
       setRunSources(detail.sources);
-      setMessage(`已加载任务 #${detail.run.id}：${detail.run.keyword}`);
+      setExpandedLearningItem(null);
+      setActiveView("learn");
+      setMessage(`已打开任务 #${detail.run.id}：${detail.run.keyword}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加载任务详情失败");
     }
