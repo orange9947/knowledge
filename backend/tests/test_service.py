@@ -187,12 +187,18 @@ def test_collect_sources_updates_run_and_persists_sources(tmp_path, monkeypatch)
         assert nodes == []
         assert edges == []
 
-        LearningRunService(session).approve_cards(run.id, [cards[0].id, cards[-1].id])
+        approval_result = LearningRunService(session).approve_cards(run.id, [cards[0].id, cards[-1].id])
+        assert approval_result["approved_count"] == 2
+        assert approval_result["skipped_count"] == 0
         approved_cards = repository.list_cards_for_run(run.id)
         assert [card.approval_status for card in approved_cards].count("approved") == 2
         nodes, edges = repository.list_graph(knowledge_base.id)
         assert len(nodes) >= 2
         assert len(edges) >= 1
+        duplicate_result = LearningRunService(session).approve_cards(run.id, [cards[0].id, cards[-1].id])
+        assert duplicate_result["approved_count"] == 0
+        assert duplicate_result["skipped_count"] == 2
+        assert duplicate_result["message"] == "所选卡片已加入过图谱"
     finally:
         session.close()
 

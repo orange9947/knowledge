@@ -112,6 +112,15 @@ export type RunDetail = {
   cards: LearningCard[];
 };
 
+export type CardApprovalResult = {
+  run: LearningRun;
+  approved_count: number;
+  skipped_count: number;
+  approved_card_ids: number[];
+  skipped_card_ids: number[];
+  message: string;
+};
+
 export type ModelSettings = {
   id: number;
   name: string;
@@ -370,8 +379,8 @@ export async function fetchRunCards(runId: number): Promise<LearningCard[]> {
   return request<LearningCard[]>(`/runs/${runId}/cards`);
 }
 
-export async function approveRunCards(runId: number, cardIds: number[]): Promise<LearningRun> {
-  return request<LearningRun>(`/runs/${runId}/cards/approve`, {
+export async function approveRunCards(runId: number, cardIds: number[]): Promise<CardApprovalResult> {
+  return request<CardApprovalResult>(`/runs/${runId}/cards/approve`, {
     method: "POST",
     body: JSON.stringify({ card_ids: cardIds }),
   });

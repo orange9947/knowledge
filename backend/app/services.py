@@ -221,10 +221,21 @@ class LearningRunService:
         selected_cards = [card for card in cards if card.id in selected_ids]
         if not selected_cards:
             raise ValueError("请选择要加入图谱的知识卡片")
+        pending_cards = [card for card in selected_cards if card.approval_status != "approved"]
+        skipped_cards = [card for card in selected_cards if card.approval_status == "approved"]
         for card in selected_cards:
+            if card.approval_status == "approved":
+                continue
             node_ids = self._approve_card(run.knowledge_base_id, card)
             self.repository.update_card_approval(card, node_ids)
-        return run
+        return {
+            "run": run,
+            "approved_count": len(pending_cards),
+            "skipped_count": len(skipped_cards),
+            "approved_card_ids": [card.id for card in pending_cards],
+            "skipped_card_ids": [card.id for card in skipped_cards],
+            "message": _approval_message(len(pending_cards), len(skipped_cards)),
+        }
 
     def _persist_ai_candidates(self, run_id: int, sources, output: AIOutput) -> None:
         existing_sort_orders = [card.sort_order for card in self.repository.list_cards_for_run(run_id)]
@@ -316,6 +327,14 @@ def _source_ids_from_indexes(sources, indexes: list[int]) -> list[int]:
         if 0 <= index < len(sources):
             ids.append(sources[index].id)
     return ids
+
+
+def _approval_message(approved_count: int, skipped_count: int) -> str:
+    if approved_count > 0 and skipped_count > 0:
+        return f"已将 {approved_count} 张知识卡片加入图谱，跳过 {skipped_count} 张已加入卡片"
+    if approved_count > 0:
+        return f"已将 {approved_count} 张知识卡片加入图谱"
+    return "所选卡片已加入过图谱"
 
 
 def _card_node_ids_for_payload(card_title: str, node_by_name) -> list[int]:

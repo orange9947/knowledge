@@ -193,6 +193,15 @@ class CardApprovalRequest(BaseModel):
     card_ids: list[int]
 
 
+class CardApprovalResult(BaseModel):
+    run: LearningRunRead
+    approved_count: int
+    skipped_count: int = 0
+    approved_card_ids: list[int] = Field(default_factory=list)
+    skipped_card_ids: list[int] = Field(default_factory=list)
+    message: str
+
+
 class AssistantQueryRequest(BaseModel):
     knowledge_base_id: int
     question: str = Field(min_length=1, max_length=2000)

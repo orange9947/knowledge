@@ -1783,6 +1783,71 @@ textarea:disabled,
   white-space: nowrap;
 }
 
+.history-card-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.history-card-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-card-heading strong {
+  color: var(--ink);
+}
+
+.history-card-heading span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.history-card {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  text-align: left;
+  background: var(--paper);
+}
+
+.history-card strong,
+.history-card small {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.history-card strong {
+  display: -webkit-box;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.history-card small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  display: -webkit-box;
+  font-size: 0.8rem;
+  line-height: 1.42;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .mini-source-list {
   margin-top: 12px;
   display: grid;

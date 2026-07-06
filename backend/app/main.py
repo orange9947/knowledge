@@ -14,6 +14,7 @@ from app.schemas import (
     AssistantQueryResponse,
     CardRead,
     CardApprovalRequest,
+    CardApprovalResult,
     GraphRead,
     HealthResponse,
     KnowledgeBaseCreate,
@@ -335,7 +336,7 @@ def list_run_cards(run_id: int, session: Session = Depends(get_session)):
     return repository.list_cards_for_run(run_id)
 
 
-@app.post("/runs/{run_id}/cards/approve", response_model=LearningRunRead)
+@app.post("/runs/{run_id}/cards/approve", response_model=CardApprovalResult)
 def approve_run_cards(
     run_id: int,
     payload: CardApprovalRequest,
@@ -344,12 +345,12 @@ def approve_run_cards(
     if not payload.card_ids:
         raise HTTPException(status_code=422, detail="请选择要加入图谱的知识卡片")
     try:
-        run = LearningRunService(session).approve_cards(run_id, payload.card_ids)
+        result = LearningRunService(session).approve_cards(run_id, payload.card_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if run is None:
+    if result is None:
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
-    return run
+    return result
 
 
 @app.get("/knowledge/graph", response_model=GraphRead)

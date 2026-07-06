@@ -419,19 +419,26 @@ describe("App", () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            id: 8,
-            knowledge_base_id: 1,
-            keyword: "AI 智能体",
-            mode: "light",
-            status: "completed",
-            created_at: "2026-07-04T00:00:00Z",
-            completed_at: "2026-07-04T00:00:00Z",
-            language_policy: "zh-en-to-zh",
-            source_count: 1,
-            token_usage_estimate: null,
-            error_summary: null,
-            is_pinned: false,
-            learning_prompt: "本次关注工具链",
+            run: {
+              id: 8,
+              knowledge_base_id: 1,
+              keyword: "AI 智能体",
+              mode: "light",
+              status: "completed",
+              created_at: "2026-07-04T00:00:00Z",
+              completed_at: "2026-07-04T00:00:00Z",
+              language_policy: "zh-en-to-zh",
+              source_count: 1,
+              token_usage_estimate: null,
+              error_summary: null,
+              is_pinned: false,
+              learning_prompt: "本次关注工具链",
+            },
+            approved_count: 2,
+            skipped_count: 0,
+            approved_card_ids: [81, 82],
+            skipped_card_ids: [],
+            message: "已将 2 张知识卡片加入图谱",
           }),
         });
       }
@@ -495,19 +502,26 @@ describe("App", () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            id: 9,
-            knowledge_base_id: 1,
-            keyword: "AI助手：我下一步应该学什么？",
-            mode: "light",
-            status: "completed",
-            created_at: "2026-07-04T00:00:00Z",
-            completed_at: "2026-07-04T00:00:00Z",
-            language_policy: "zh-en-to-zh",
-            source_count: 1,
-            token_usage_estimate: null,
-            error_summary: null,
-            is_pinned: false,
-            learning_prompt: null,
+            run: {
+              id: 9,
+              knowledge_base_id: 1,
+              keyword: "AI助手：我下一步应该学什么？",
+              mode: "light",
+              status: "completed",
+              created_at: "2026-07-04T00:00:00Z",
+              completed_at: "2026-07-04T00:00:00Z",
+              language_policy: "zh-en-to-zh",
+              source_count: 1,
+              token_usage_estimate: null,
+              error_summary: null,
+              is_pinned: false,
+              learning_prompt: null,
+            },
+            approved_count: 1,
+            skipped_count: 0,
+            approved_card_ids: [91],
+            skipped_card_ids: [],
+            message: "已将 1 张知识卡片加入图谱",
           }),
         });
       }
@@ -752,7 +766,34 @@ describe("App", () => {
                 is_pinned: false,
               },
             ],
-            cards: [],
+            cards: [
+              {
+                id: 71,
+                run_id: 7,
+                type: "summary",
+                title: "RAG 本次总结",
+                summary: "新增重排序知识",
+                details: "已过滤重复内容",
+                source_ids: [1],
+                node_ids: [2],
+                sort_order: 0,
+                approval_status: "approved",
+                candidate_payload: null,
+              },
+              {
+                id: 72,
+                run_id: 7,
+                type: "keyword_hint",
+                title: "重排序",
+                summary: "RAG 的牵连知识点",
+                details: null,
+                source_ids: [1],
+                node_ids: [],
+                sort_order: 1,
+                approval_status: "candidate",
+                candidate_payload: null,
+              },
+            ],
           }),
         });
       }
@@ -1017,7 +1058,7 @@ describe("App", () => {
     expect(screen.getByText("RAG rerank guide")).toBeInTheDocument();
     await user.click(screen.getByLabelText(/重排序/));
     await user.click(screen.getByRole("button", { name: "加入选中知识" }));
-    expect(await screen.findByText("已将 1 张助手候选卡片加入图谱")).toBeInTheDocument();
+    expect(await screen.findByText("已将 1 张知识卡片加入图谱")).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "新建关键点" })[0]);
     await user.type(screen.getByLabelText("关键点名称"), "向量检索");
     await user.selectOptions(screen.getByLabelText("关键点类型"), "skill");
@@ -1040,6 +1081,11 @@ describe("App", () => {
     await user.type(screen.getByRole("textbox", { name: "筛选历史记录" }), "RAG");
     await user.click(screen.getByRole("button", { name: /RAG/ }));
     expect(await screen.findByText("RAG repositories")).toBeInTheDocument();
+    expect(screen.getByLabelText("历史知识卡片")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /RAG 本次总结/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /RAG 本次总结/ }));
+    expect(screen.getByRole("dialog", { name: "知识卡片详情" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭详情" }));
     await user.click(screen.getByRole("button", { name: "学习" }));
     await user.click(screen.getByRole("button", { name: "总结本次素材" }));
     expect(await screen.findByText("重排序")).toBeInTheDocument();

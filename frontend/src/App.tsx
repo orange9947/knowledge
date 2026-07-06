@@ -797,13 +797,20 @@ function App() {
       setMessage("请选择要加入图谱的知识卡片");
       return;
     }
-    setBusy(true);
-    setMessage(`正在将 ${selectedCardIds.length} 张知识卡片加入图谱...`);
-    try {
-      const updated = await approveRunCards(selectedRun.id, selectedCardIds);
-      await refreshRunAnalysis(updated, activeKnowledgeBaseId);
+    const selectedCards = cards.filter((card) => selectedCardIds.includes(card.id));
+    const pendingCardIds = selectedCards.filter((card) => card.approval_status !== "approved").map((card) => card.id);
+    if (pendingCardIds.length === 0) {
       setSelectedCardIds([]);
-      setMessage(`已将 ${selectedCardIds.length} 张知识卡片加入图谱`);
+      setMessage("所选卡片已加入过图谱");
+      return;
+    }
+    setBusy(true);
+    setMessage(`正在将 ${pendingCardIds.length} 张知识卡片加入图谱...`);
+    try {
+      const result = await approveRunCards(selectedRun.id, pendingCardIds);
+      await refreshRunAnalysis(result.run, activeKnowledgeBaseId);
+      setSelectedCardIds([]);
+      setMessage(result.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "加入图谱失败");
     } finally {
@@ -1036,12 +1043,20 @@ function App() {
       setMessage("请选择要加入图谱的助手候选卡片");
       return;
     }
+    const pendingCardIds = assistantResponse.candidate_cards
+      .filter((card) => card.id !== null && assistantSelectedCardIds.includes(card.id) && card.approval_status !== "approved")
+      .map((card) => card.id as number);
+    if (pendingCardIds.length === 0) {
+      setAssistantSelectedCardIds([]);
+      setMessage("所选助手候选卡片已加入过图谱");
+      return;
+    }
     setBusy(true);
     setMessage("正在将助手候选卡片加入图谱...");
     try {
-      const updated = await approveRunCards(assistantResponse.run_id, assistantSelectedCardIds);
-      await refreshActiveKnowledgeBase(updated.knowledge_base_id);
-      const detail = await fetchRunDetail(updated.id);
+      const result = await approveRunCards(assistantResponse.run_id, pendingCardIds);
+      await refreshActiveKnowledgeBase(result.run.knowledge_base_id);
+      const detail = await fetchRunDetail(result.run.id);
       setSelectedRun(detail.run);
       setCards(detail.cards);
       setRunSources(detail.sources);
@@ -1049,14 +1064,14 @@ function App() {
         ? {
             ...current,
             candidate_cards: current.candidate_cards.map((card) => (
-              card.id !== null && assistantSelectedCardIds.includes(card.id)
+              card.id !== null && pendingCardIds.includes(card.id)
                 ? { ...card, approval_status: "approved" }
                 : card
             )),
           }
         : current);
       setAssistantSelectedCardIds([]);
-      setMessage(`已将 ${assistantSelectedCardIds.length} 张助手候选卡片加入图谱`);
+      setMessage(result.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "助手候选卡片加入图谱失败");
     } finally {
@@ -1320,10 +1335,12 @@ function App() {
               onImport={handleImport}
               onDeleteRun={handleDeleteRun}
               onDeleteSource={handleDeleteSource}
+              onOpenCard={(card) => setExpandedLearningItem({ kind: "card", item: card })}
               onSelectRun={handleSelectRun}
               onStatusChange={setStatusFilter}
               onToggleSourceRetention={handleToggleSourceRetention}
               onToggleRunRetention={handleToggleRunRetention}
+              cards={cards}
               runSources={runSources}
               runs={filteredRuns}
               selectedRun={selectedRun}
@@ -1649,7 +1666,6 @@ function LearningCardItem({
         <input
           aria-label={`选择知识卡片 ${card.title}`}
           checked={selected}
-          disabled={card.approval_status !== "candidate"}
           type="checkbox"
           onChange={(event) => onToggleCardSelection(card.id, event.target.checked)}
         />
@@ -1698,7 +1714,6 @@ function KeywordHints({
                 <input
                   aria-label={`选择关键词 ${card.title}`}
                   checked={selectedCardIds.includes(card.id)}
-                  disabled={card.approval_status !== "candidate"}
                   type="checkbox"
                   onChange={(event) => onToggleCardSelection(card.id, event.target.checked)}
                 />
@@ -2395,7 +2410,7 @@ function AssistantDrawer({
                   <label key={card.id ?? card.title}>
                     <input
                       checked={card.id !== null && selectedCardIds.includes(card.id)}
-                      disabled={busy || card.id === null || card.approval_status === "approved"}
+                      disabled={busy || card.id === null}
                       type="checkbox"
                       onChange={(event) => card.id !== null && onToggleCandidate(card.id, event.target.checked)}
                     />
@@ -2877,6 +2892,7 @@ function KnowledgeBasePanel({
 
 function HistoryPanel({
   busy,
+  cards,
   filter,
   onClearText,
   onDeleteRun,
@@ -2885,6 +2901,7 @@ function HistoryPanel({
   onExport,
   onImport,
   onDeleteSource,
+  onOpenCard,
   onSelectRun,
   onStatusChange,
   onToggleSourceRetention,
@@ -2894,6 +2911,7 @@ function HistoryPanel({
   statusFilter,
 }: {
   busy: boolean;
+  cards: LearningCard[];
   filter: string;
   runs: LearningRun[];
   onClearText: (source: SourceRecord) => void;
@@ -2902,6 +2920,7 @@ function HistoryPanel({
   onFilterChange: (value: string) => void;
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
   onDeleteSource: (source: SourceRecord) => void;
+  onOpenCard: (card: LearningCard) => void;
   onSelectRun: (runId: number) => void;
   onStatusChange: (value: string) => void;
   onToggleSourceRetention: (source: SourceRecord) => void;
@@ -2999,6 +3018,25 @@ function HistoryPanel({
                 <span>状态</span>
                 <strong>{statusLabel(selectedRun.status)}</strong>
               </div>
+            </div>
+            <div className="history-card-list" aria-label="历史知识卡片">
+              <div className="history-card-heading">
+                <strong>知识卡片</strong>
+                <span>{cards.length} 张</span>
+              </div>
+              {cards.length === 0 ? (
+                <p className="empty-state compact">这个任务暂无知识卡片。</p>
+              ) : (
+                cards.slice(0, 8).map((card) => (
+                  <button className="history-card" key={card.id} type="button" onClick={() => onOpenCard(card)}>
+                    <span className={`approval-badge ${card.approval_status}`}>
+                      {card.approval_status === "approved" ? "已加入" : "待加入"}
+                    </span>
+                    <strong>{card.title}</strong>
+                    <small>{card.summary}</small>
+                  </button>
+                ))
+              )}
             </div>
             <div className="mini-source-list">
               {runSources.slice(0, 5).map((source) => (

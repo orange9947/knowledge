@@ -376,10 +376,23 @@ def test_cards_and_graph_endpoints(client: TestClient):
         json={"card_ids": [cards[0]["id"], cards[-1]["id"]]},
     )
     assert approve_response.status_code == 200
+    approval_result = approve_response.json()
+    assert approval_result["approved_count"] == 2
+    assert approval_result["skipped_count"] == 0
+    assert approval_result["message"] == "已将 2 张知识卡片加入图谱"
     approved_cards = client.get(f"/runs/{run_id}/cards").json()
     assert [card["approval_status"] for card in approved_cards].count("approved") == 2
     approved_graph = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
     assert len(approved_graph["nodes"]) >= 2
+    duplicate_approve_response = client.post(
+        f"/runs/{run_id}/cards/approve",
+        json={"card_ids": [cards[0]["id"], cards[-1]["id"]]},
+    )
+    assert duplicate_approve_response.status_code == 200
+    duplicate_result = duplicate_approve_response.json()
+    assert duplicate_result["approved_count"] == 0
+    assert duplicate_result["skipped_count"] == 2
+    assert duplicate_result["message"] == "所选卡片已加入过图谱"
 
 
 def test_run_detail_status_and_knowledge_search(client: TestClient):
