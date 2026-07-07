@@ -49,6 +49,12 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci --prefix desktop
 
+      - name: Ensure Rolldown Windows native binding
+        shell: pwsh
+        run: |
+          npm --prefix desktop install --include=optional --no-save --package-lock=false @rolldown/binding-win32-x64-msvc@1.1.4
+          node -e "require.resolve('@rolldown/binding-win32-x64-msvc', { paths: ['desktop'] }); console.log('rolldown windows binding ok')"
+
       - name: Test desktop shell
         run: npm run test:desktop
 
