@@ -60,6 +60,14 @@ SOURCE_NOT_FOUND = "来源不存在"
 LAST_KNOWLEDGE_BASE_DELETE_FORBIDDEN = "至少需要保留一个知识库"
 MODEL_API_KEY_REQUIRED = "请先填写或保存 API 密钥"
 
+
+def _source_read(source: models.Source, include_text: bool = True) -> SourceRead:
+    payload = model_dump(model_validate(SourceRead, source))
+    if not include_text:
+        payload["extracted_text"] = None
+    return SourceRead(**payload)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -201,7 +209,7 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return RunDetailRead(
         run=model_validate(LearningRunRead, run),
-        sources=[model_validate(SourceRead, source) for source in repository.list_sources_for_run(run_id)],
+        sources=[_source_read(source, include_text=False) for source in repository.list_sources_for_run(run_id)],
         cards=[model_validate(CardRead, card) for card in repository.list_cards_for_run(run_id)],
     )
 
@@ -272,6 +280,14 @@ def list_run_sources(run_id: int, session: Session = Depends(get_session)):
     if repository.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return repository.list_sources_for_run(run_id)
+
+
+@app.get("/sources/{source_id}", response_model=SourceRead)
+def get_source(source_id: int, session: Session = Depends(get_session)):
+    source = KnowledgeRepository(session).get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail=SOURCE_NOT_FOUND)
+    return source
 
 
 @app.patch("/sources/{source_id}/retention", response_model=SourceRead)

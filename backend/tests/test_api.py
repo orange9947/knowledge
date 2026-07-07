@@ -412,6 +412,7 @@ def test_run_detail_status_and_knowledge_search(client: TestClient):
         json={"keyword": "Graph RAG", "mode": "light", "knowledge_base_id": knowledge_base_id},
     )
     run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/collect")
     client.post(f"/runs/{run_id}/generate")
 
     detail_response = client.get(f"/runs/{run_id}")
@@ -421,7 +422,12 @@ def test_run_detail_status_and_knowledge_search(client: TestClient):
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["run"]["id"] == run_id
-    assert len(detail["cards"]) == 6
+    assert len(detail["cards"]) >= 6
+    assert all(source["extracted_text"] is None for source in detail["sources"])
+    source_id = client.get(f"/runs/{run_id}/sources").json()[0]["id"]
+    source_response = client.get(f"/sources/{source_id}")
+    assert source_response.status_code == 200
+    assert source_response.json()["extracted_text"]
     assert status_response.status_code == 200
     assert status_response.json()["id"] == run_id
     assert search_response.status_code == 200

@@ -62,12 +62,6 @@ class LearningRunRead(OrmBaseModel):
     learning_prompt: str | None = None
 
 
-class RunDetailRead(BaseModel):
-    run: LearningRunRead
-    sources: list["SourceRead"]
-    cards: list["CardRead"]
-
-
 class ModelConfigWrite(BaseModel):
     name: str = Field(default="默认配置", min_length=1, max_length=120)
     base_url: str = Field(min_length=1)
@@ -187,6 +181,12 @@ class CardRead(OrmBaseModel):
     sort_order: int
     approval_status: str = "approved"
     candidate_payload: dict[str, Any] | None = None
+
+
+class RunDetailRead(BaseModel):
+    run: LearningRunRead
+    sources: list[SourceRead]
+    cards: list[CardRead]
 
 
 class CardApprovalRequest(BaseModel):

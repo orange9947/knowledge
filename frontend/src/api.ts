@@ -361,6 +361,10 @@ export async function fetchRunSources(runId: number): Promise<SourceRecord[]> {
   return request<SourceRecord[]>(`/runs/${runId}/sources`);
 }
 
+export async function fetchSource(sourceId: number): Promise<SourceRecord> {
+  return request<SourceRecord>(`/sources/${sourceId}`);
+}
+
 export async function updateSourceRetention(sourceId: number, isPinned: boolean): Promise<SourceRecord> {
   return request<SourceRecord>(`/sources/${sourceId}/retention`, {
     method: "PATCH",

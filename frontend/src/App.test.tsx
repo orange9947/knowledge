@@ -794,8 +794,8 @@ describe("App", () => {
                 published_at: null,
                 status: "success",
                 status_reason: null,
-                snippet: null,
-                extracted_text: "RAG material",
+                snippet: "RAG source preview",
+                extracted_text: null,
                 content_hash: "hash",
                 quality_score: 1,
                 is_pinned: false,
@@ -829,6 +829,27 @@ describe("App", () => {
                 candidate_payload: null,
               },
             ],
+          }),
+        });
+      }
+      if (url.endsWith("/sources/1") && !url.endsWith("/sources/1/retention")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            id: 1,
+            run_id: 7,
+            url: "https://github.com/search?q=RAG",
+            title: "RAG repositories",
+            site: "github.com",
+            language: "en",
+            published_at: null,
+            status: "success",
+            status_reason: null,
+            snippet: "RAG source preview",
+            extracted_text: "RAG material full text",
+            content_hash: "hash",
+            quality_score: 1,
+            is_pinned: false,
           }),
         });
       }
@@ -1136,6 +1157,11 @@ describe("App", () => {
     expect(screen.getByText("RAG repositories")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /RAG repositories/ }));
     expect(screen.getByRole("dialog", { name: "素材详情" })).toBeInTheDocument();
+    expect(await screen.findByText("RAG material full text")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sources/1",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
     await user.click(screen.getByRole("button", { name: "关闭详情" }));
     expect(screen.getByRole("button", { name: /RAG 本次总结/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /RAG 本次总结/ }));

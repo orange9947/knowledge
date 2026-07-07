@@ -50,6 +50,7 @@ import {
   fetchRunCards,
   fetchRunSources,
   fetchRuns,
+  fetchSource,
   fetchSourceSettings,
   importKnowledge,
   pauseRunCollection,
@@ -1116,6 +1117,23 @@ function App() {
     setMessage(`已在学习页打开任务 #${historyRunDetail.run.id}：${historyRunDetail.run.keyword}`);
   }
 
+  async function handleOpenSource(source: SourceRecord) {
+    setExpandedLearningItem({ kind: "source", item: source });
+    if (source.extracted_text) return;
+    try {
+      const detail = await fetchSource(source.id);
+      setExpandedLearningItem((current) => (
+        current?.kind === "source" && current.item.id === detail.id
+          ? { kind: "source", item: detail }
+          : current
+      ));
+      setRunSources((current) => current.map((item) => (item.id === detail.id ? detail : item)));
+      setHistoryRunDetail((current) => syncRunDetailSource(current, detail));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "加载来源详情失败");
+    }
+  }
+
   async function handleToggleRunRetention(run: LearningRun) {
     setBusy(true);
     try {
@@ -1317,7 +1335,7 @@ function App() {
                 busy={uiLocked}
                 onClearText={handleClearSourceText}
                 onDeleteSource={handleDeleteSource}
-                onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
+                onOpenSource={handleOpenSource}
                 onToggleRetention={handleToggleSourceRetention}
                 runSources={runSources}
               />
@@ -1352,7 +1370,7 @@ function App() {
               onEditNode={handleEditNode}
               onNodeFormChange={handleNodeFormChange}
               onOpenCard={(card) => setExpandedLearningItem({ kind: "card", item: card })}
-              onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
+              onOpenSource={handleOpenSource}
               onResetOverview={handleResetGraphOverview}
               onSaveNode={handleSaveNode}
               onSelectNode={handleSelectNode}
@@ -1380,7 +1398,7 @@ function App() {
               onDeleteRun={handleDeleteRun}
               onDeleteSource={handleDeleteSource}
               onOpenCard={(card) => setExpandedLearningItem({ kind: "card", item: card })}
-              onOpenSource={(source) => setExpandedLearningItem({ kind: "source", item: source })}
+              onOpenSource={handleOpenSource}
               onOpenRunInLearning={handleOpenHistoryRunInLearning}
               onSelectRun={handleSelectRun}
               onStatusChange={setStatusFilter}
@@ -2833,13 +2851,13 @@ function ExtractionPanel({
                 >
                   {source.is_pinned ? <PinOff size={15} /> : <Pin size={15} />}
                 </button>
-                <button
-                  aria-label={`清空正文 ${source.id}`}
-                  className="icon-action"
-                  disabled={busy || !source.extracted_text}
-                  onClick={() => onClearText(source)}
-                  title="清空抓取正文"
-                  type="button"
+                  <button
+                    aria-label={`清空正文 ${source.id}`}
+                    className="icon-action"
+                    disabled={busy || (!source.extracted_text && !source.content_hash)}
+                    onClick={() => onClearText(source)}
+                    title="清空抓取正文"
+                    type="button"
                 >
                   <SlidersHorizontal size={15} />
                 </button>
