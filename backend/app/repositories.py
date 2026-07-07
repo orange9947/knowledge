@@ -184,12 +184,10 @@ class KnowledgeRepository:
         return run
 
     def delete_run(self, run: models.LearningRun) -> None:
-        knowledge_base_id = run.knowledge_base_id
         source_ids = [source.id for source in self.list_sources_for_run(run.id)]
         self._remove_source_references(source_ids)
         self.session.delete(run)
         self.session.commit()
-        self.prune_orphan_graph(knowledge_base_id, remove_unanchored_edges=True)
 
     def get_model_config(self) -> models.ModelConfig | None:
         statement = select(models.ModelConfig).order_by(models.ModelConfig.id.asc())

@@ -200,9 +200,9 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)):
     if run is None:
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND)
     return RunDetailRead(
-        run=run,
-        sources=repository.list_sources_for_run(run_id),
-        cards=repository.list_cards_for_run(run_id),
+        run=model_validate(LearningRunRead, run),
+        sources=[model_validate(SourceRead, source) for source in repository.list_sources_for_run(run_id)],
+        cards=[model_validate(CardRead, card) for card in repository.list_cards_for_run(run_id)],
     )
 
 

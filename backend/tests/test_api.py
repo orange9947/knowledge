@@ -786,6 +786,39 @@ def test_run_and_source_retention_delete_and_clear_text(client: TestClient):
     assert client.get(f"/runs/{run_id}").status_code == 404
 
 
+def test_deleting_run_keeps_approved_graph_independent(client: TestClient):
+    base_response = client.post("/knowledge-bases", json={"name": "Independent Graph"})
+    knowledge_base_id = base_response.json()["id"]
+    run_response = client.post(
+        "/runs",
+        json={"keyword": "独立图谱", "mode": "light", "knowledge_base_id": knowledge_base_id},
+    )
+    run_id = run_response.json()["id"]
+    client.post(f"/runs/{run_id}/generate")
+    cards = client.get(f"/runs/{run_id}/cards").json()
+    approve_response = client.post(
+        f"/runs/{run_id}/cards/approve",
+        json={"card_ids": [card["id"] for card in cards]},
+    )
+    assert approve_response.status_code == 200
+
+    graph_before_delete = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    assert graph_before_delete["nodes"]
+    assert graph_before_delete["edges"]
+
+    delete_response = client.delete(f"/runs/{run_id}")
+
+    assert delete_response.status_code == 204
+    assert client.get(f"/runs/{run_id}").status_code == 404
+    graph_after_delete = client.get(f"/knowledge/graph?knowledge_base_id={knowledge_base_id}").json()
+    assert {node["id"] for node in graph_before_delete["nodes"]}.issubset(
+        {node["id"] for node in graph_after_delete["nodes"]}
+    )
+    assert {edge["id"] for edge in graph_before_delete["edges"]}.issubset(
+        {edge["id"] for edge in graph_after_delete["edges"]}
+    )
+
+
 def test_knowledge_base_endpoints_create_default_and_custom_base(client: TestClient):
     list_response = client.get("/knowledge-bases")
     assert list_response.status_code == 200
